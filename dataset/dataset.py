@@ -54,7 +54,7 @@ class DataSetLoad():
         self.max_length = self.getlegth()
         self.train = DataLoad(self.max_length, self.train_ori)
         self.dev = DataLoad(self.max_length, self.dev_ori)
-        print(self.train.__getitem__(3))
+        print(self.train.__getitem__(0))
         print("data already")
 
     # 读取数据库并将每个数据库内表与列添加seq表示法，按[表1,[表1内的列],表2,[表2内的列],...]排列，
@@ -150,16 +150,15 @@ class DataSetLoad():
             turn = len(item['interaction'])
             max_legth['turn'] = max(max_legth['turn'], turn + 1)
             for pair in item['interaction']:
-                utterance = re.split('[ _]', pair['utterance'])
+                utterance = re.split('[ _]', pair['utterance'].lower())
                 sql = list(pair['sql'][0][0])
                 max_legth['sql'] = max(max_legth['sql'], len(sql)+1)
                 max_legth['utter'] = max(max_legth['utter'], len(utterance)+1)
                 split_pair = {'utterance': {'tokens': ['<utter>'] + utterance, 'types': [0]+[0 for _ in utterance]},
                               'sql': {'tokens': ['<sql>'] + sql, 'types': [0]+self.get_sql_type(sql, item['split_database'])}}
                 split_interaction.append(split_pair)
-            utterance = re.split('[ _]', item['final']['utterance'])
-            sql = re.split('[ _]', item['final']['sql'])
-            sql = [token.lower() for token in sql]
+            utterance = re.split('[ _]', item['final']['utterance'].lower())
+            sql = re.split('[ _]', item['final']['sql'].lower())
             max_legth['sql'] = max(max_legth['sql'], len(sql)+1)
             max_legth['utter'] = max(max_legth['utter'], len(utterance)+1)
             split_pair = {'utterance': {'tokens': ['<utter>'] + utterance, 'types': [0] + [0 for _ in utterance]},
@@ -175,22 +174,19 @@ class DataSetLoad():
             turn = len(item['interaction'])
             max_legth['turn'] = max(max_legth['turn'], turn + 1)
             for pair in item['interaction']:
-                utterance = re.split('[ _]', pair['utterance'])
+                utterance = re.split('[ _]', pair['utterance'].lower())
                 sql = list(pair['sql'][0][0])
-                max_legth['sql'] = max(max_legth['sql'], len(sql))
-                max_legth['utter'] = max(max_legth['utter'], len(utterance))
-                split_pair = {'utterance': {'tokens': ['<utter>'] + utterance, 'types': [0] + [0 for _ in utterance]},
-                              'sql': {'tokens': ['<sql>'] + sql,
-                                      'types': [0] + self.get_sql_type(sql, item['split_database'])}}
+                max_legth['sql'] = max(max_legth['sql'], len(sql)+1)
+                max_legth['utter'] = max(max_legth['utter'], len(utterance)+1)
+                split_pair = {'utterance': {'tokens': ['<utter>'] + utterance, 'types': [0]+[0 for _ in utterance]},
+                              'sql': {'tokens': ['<sql>'] + sql, 'types': [0]+self.get_sql_type(sql, item['split_database'])}}
                 split_interaction.append(split_pair)
-            utterance = re.split('[ _]', item['final']['utterance'])
-            sql = re.split('[ _]', item['final']['sql'])
-            sql = [token.lower() for token in sql]
-            max_legth['sql'] = max(max_legth['sql'], len(sql))
-            max_legth['utter'] = max(max_legth['utter'], len(utterance))
+            utterance = re.split('[ _]', item['final']['utterance'].lower())
+            sql = re.split('[ _]', item['final']['sql'].lower())
+            max_legth['sql'] = max(max_legth['sql'], len(sql)+1)
+            max_legth['utter'] = max(max_legth['utter'], len(utterance)+1)
             split_pair = {'utterance': {'tokens': ['<utter>'] + utterance, 'types': [0] + [0 for _ in utterance]},
-                          'sql': {'tokens': ['<sql>'] + sql,
-                                  'types': [0] + self.get_sql_type(sql, item['split_database'])}}
+                          'sql': {'tokens': ['<sql>'] + sql, 'types': [0] + self.get_sql_type(sql, item['split_database'])}}
             split_interaction.append(split_pair)
             item['split_pair'] = split_interaction
             max_legth['db'] = max(max_legth['db'], len(item['split_database']['tokens']))
@@ -198,12 +194,6 @@ class DataSetLoad():
         return max_legth
 
 dataset = DataSetLoad(1)
-
-
-
-
-
-
 
 
 # TODO：dataset的格式参考model的forward函数
