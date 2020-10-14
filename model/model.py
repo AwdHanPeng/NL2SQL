@@ -43,9 +43,11 @@ class Model(nn.Module):
         Shape of Input/position/modality/temporal: [Batch_size, total sequence length]
         Shape of Mask: [Batch_size, 1, total sequence length, total sequence length]
         :param input: [[DB]; [Utter1;SQL1]; [Utter2;SQL2];...[Utter N;ShiftedSQL N],[PADDING;PADDING]*(max turn-N)]
-        :param position:
-        :param modality:
-        :param temporal:
+        :param position: -
+        :param modality: 0 无， 1 db 2 utter 3 sql
+
+        :param temporal: 0 无， 第一轮：1 ，，，
+        db 0 无  1 table 2 column 3 key
         :param mask:
         :return:
         '''
