@@ -1,40 +1,35 @@
 import torch.nn as nn
 
-from .embedding import Embedding
+from .embedding import InputEmbedding, OutputEmbedding
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 
 
 class Model(nn.Module):
-    """
-    BERT model : Bidirectional Encoder Representations from Transformers.
-    """
 
-    def __init__(self, hidden=768, n_layers=12, attn_heads=12, dropout=0.1):
-        """
-        :param vocab_size: vocab_size of total words
-        :param hidden: BERT model hidden size
-        :param n_layers: numbers of Transformer blocks(layers)
-        :param attn_heads: number of attention heads
-        :param dropout: dropout rate
-        """
-
+    def __init__(self, args):
         super().__init__()
-        self.hidden = hidden
-        self.n_layers = n_layers
-        self.attn_heads = attn_heads
-
-        self.feed_forward_hidden = hidden * 4
+        self.input_size = args.input_size if args.input_size else None
+        self.batch_size = args.batch_size if args.batch_size else None
+        self.total_len = args.total_len if args.total_len else None
+        self.hidden = args.hidden if args.hidden else None
+        self.n_layers = args.n_layers if args.n_layers else None
+        self.attn_heads = args.attn_heads if args.attn_heads else None
 
         # embedding for BERT, sum of several embeddings
-        self.embedding = Embedding()
+        self.input_embedding, self.output_embedding = InputEmbedding(args), OutputEmbedding(args)
 
         self.transformer_encoder_layer = TransformerEncoderLayer(d_model=self.hidden, nhead=self.attn_heads)
         self.transformer_encoder = TransformerEncoder(encoder_layer=self.transformer_encoder_layer,
                                                       num_layers=self.n_layers)
+        self.tranform_layer = nn.Linear(self.input_size, self.hidden)  # this module convert bert dim to out model dim
 
-    def forward(self, input, position, modality, temporal, mask):
+    def create_mask(self, signal):
+        assert signal.size == (self.batch_size, self.total_len)
+        return signal.unsqueeze(1).repeat(1, signal.size(1), 1).unsqueeze(1)
+
+    def forward(self, data):
         '''
-        self.model.forward(data["input"], data["positon label"], data["modality label"], data["temporal label"],
+        self.model.forward(data["input"], data["positon label"], data["modality label"], data["temporal label"],data["db label"]
         data["mask"] )
 
         <<<max length of DB + max turn * (max utter length + max sql length) = total sequence length>>>
@@ -45,14 +40,19 @@ class Model(nn.Module):
         :param input: [[DB]; [Utter1;SQL1]; [Utter2;SQL2];...[Utter N;ShiftedSQL N],[PADDING;PADDING]*(max turn-N)]
         :param position: -
         :param modality: 0 无， 1 db 2 utter 3 sql
-
         :param temporal: 0 无， 第一轮：1 ，，，
-        db 0 无  1 table 2 column 3 key
-        :param mask:
+        :param db 0 无  1 table 2 column 3 key words
         :return:
         '''
 
-        x = self.embedding(input, position, modality, temporal)
-        x = self.transformer_encoder.forward(x, mask)
-
+        # 1，输入input和所有特殊的标识信息，得到语料的embedding
+        x = self.input_embedding(data)
+        # 2,对embedding进行维度转换
+        x = self.tranform_layer(x)
+        # 3,创建mask
+        mask = self.create_mask(data['mask'])
+        # 4，使用transformer block解析embedding
+        x = self.transformer_encoder(x, mask)
+        # 5，取最高层的表示，与输出embedding进行乘积，得到每个step上每个候选单词的概率
+        x = self.output_embedding(x)
         return x

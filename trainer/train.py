@@ -86,11 +86,11 @@ class Trainer:
             data = {key: value.to(self.device) for key, value in data.items()}
 
             # 1. forward the input and all position labels
-            generated_sql = self.model.forward(data["input"], data["positon label"],
-                                               data["modality label"], data["temporal label"], data["mask"])
+            generated_sql = self.model(data)
 
             # NLL(negative log likelihood) loss of generated sql
             generate_loss = self.criterion(generated_sql, data["gold sql"])
+            # FIXME:计算loss相关都需要再解决一下
 
             loss = generate_loss
 
@@ -101,6 +101,7 @@ class Trainer:
                 self.optim_schedule.step_and_update_lr()
 
             # next sentence prediction accuracy
+            # FIXME：等数据feed成功后再考虑修复
             correct = generate_loss.argmax(dim=-1).eq(data["gold sql"]).sum().item()
             avg_loss += loss.item()
             total_correct += correct
@@ -128,6 +129,8 @@ class Trainer:
         :param file_path: model output path which gonna be file_path+"ep%d" % epoch
         :return: final_output_path
         """
+        # TODO:计算测试集合的准确率以实现有选择的存储
+        # TODO：目前只实现了teacher force的acc计算过程 迭代式尚未实现
         output_path = file_path + ".ep%d" % epoch
         torch.save(self.model.cpu(), output_path)
         self.model.to(self.device)
