@@ -3,6 +3,8 @@ import json
 import pickle
 import re
 from torch.utils.data import Dataset
+import matplotlib.pyplot as plt
+from collections import Counter
 
 # 将数据改为全序列形式并添加<PAD>, 单个数据形式 [columns,u1,s1,u2,s2...u_m,s_m]
 class DataLoad(Dataset):
@@ -15,24 +17,35 @@ class DataLoad(Dataset):
             self.data.append(self.get_seq(item['split_database'], item['split_pair']))
 
     def get_seq(self, database, pair):
-        _data = ['<pad>' for _ in range(self.max_length['db'] + self.max_length['turn'] * (self.max_length['utter'] + self.max_length['sql']))]
+        _data = ['[PAD]' for _ in range(self.max_length['db'] + self.max_length['turn'] * (self.max_length['utter'] + self.max_length['sql']))]
         _type = [0 for _ in range(self.max_length['db'] + self.max_length['turn'] * (self.max_length['utter'] + self.max_length['sql']))]
+        _temporal = _type
+        _modality = _type
         for index in range(len(database['tokens'])):
             _data[index] = database['tokens'][index]
             _type[index] = database['types'][index]
+            _modality[index] = 1 if (database['tokens'][index] != '[SEP]') else 0
         for turn in range(len(pair)):
             for index in range(len(pair[turn]['utterance']['tokens'])):
                 _data[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
                     = pair[turn]['utterance']['tokens'][index]
                 _type[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
                     = pair[turn]['utterance']['types'][index]
+                _temporal[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
+                    = turn+1
+                _modality[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
+                    = 2 if (pair[turn]['utterance']['tokens'][index] != '[SEP]') else 0
             sql_begin = self.max_length['db'] + self.max_length['utter']
             for index in range(len(pair[turn]['sql']['tokens'])):
                 _data[index + turn * (self.max_length['utter'] + self.max_length['sql']) + sql_begin] \
                     = pair[turn]['sql']['tokens'][index]
                 _type[index + turn * (self.max_length['utter'] + self.max_length['sql']) + sql_begin] \
                     = pair[turn]['sql']['types'][index]
-        return [_data, _type]
+                _temporal[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
+                    = turn + 1
+                _modality[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
+                    = 3 if (pair[turn]['sql']['tokens'][index] != '[SEP]') else 0
+        return {'content':_data, 'db_signal': _type, 'temporal_signal': _temporal, 'modality_signal': _modality}
 
     def __getitem__(self, index):
         assert index < len(self.data)
@@ -74,13 +87,13 @@ class DataSetLoad():
             for column in table_schema['column_names']:
                 if column[0] >= table_num:
                     split_table = re.split('[ _]', table_schema['table_names'][table_num])
-                    split_database['tokens'] += ['<table>']
+                    split_database['tokens'] += ['[SEP]']
                     split_database['tokens'] += split_table
                     split_database['types'] += [0]
                     split_database['types'] += [1 for i in split_table]
                     table_num += 1
                 split_column = re.split('[ _]', column[1])
-                split_database['tokens'] += ['<column>']
+                split_database['tokens'] += ['[SEP]']
                 split_database['tokens'] += split_column
                 split_database['types'] += [0]
                 split_database['types'] += [2 for i in split_column]
@@ -143,29 +156,41 @@ class DataSetLoad():
         max_legth['turn'] = 0
         max_legth['utter'] = 0
         max_legth['sql'] = 0
+        # 统计长度分布
+        legth = {}
+        legth['db'] = []
+        legth['turn'] = []
+        legth['utter'] = []
+        legth['sql'] = []
         # 先找train最大长度
         for item in self.train_ori:
             split_interaction = []
             item['split_database'] = self.database_schema[item['database_id']]['split_database']
             turn = len(item['interaction'])
             max_legth['turn'] = max(max_legth['turn'], turn + 1)
+            legth['turn'].append(turn + 1)
             for pair in item['interaction']:
                 utterance = re.split('[ _]', pair['utterance'].lower())
                 sql = list(pair['sql'][0][0])
                 max_legth['sql'] = max(max_legth['sql'], len(sql)+1)
                 max_legth['utter'] = max(max_legth['utter'], len(utterance)+1)
-                split_pair = {'utterance': {'tokens': ['<utter>'] + utterance, 'types': [0]+[0 for _ in utterance]},
-                              'sql': {'tokens': ['<sql>'] + sql, 'types': [0]+self.get_sql_type(sql, item['split_database'])}}
+                legth['sql'].append(len(sql) + 1)
+                legth['utter'].append(len(utterance) + 1)
+                split_pair = {'utterance': {'tokens': ['[SEP]'] + utterance, 'types': [0]+[0 for _ in utterance]},
+                              'sql': {'tokens': ['[SEP]'] + sql, 'types': [0]+self.get_sql_type(sql, item['split_database'])}}
                 split_interaction.append(split_pair)
             utterance = re.split('[ _]', item['final']['utterance'].lower())
             sql = re.split('[ _]', item['final']['sql'].lower())
             max_legth['sql'] = max(max_legth['sql'], len(sql)+1)
             max_legth['utter'] = max(max_legth['utter'], len(utterance)+1)
-            split_pair = {'utterance': {'tokens': ['<utter>'] + utterance, 'types': [0] + [0 for _ in utterance]},
-                          'sql': {'tokens': ['<sql>'] + sql, 'types': [0] + self.get_sql_type(sql, item['split_database'])}}
+            legth['sql'].append(len(sql) + 1)
+            legth['utter'].append(len(utterance) + 1)
+            split_pair = {'utterance': {'tokens': ['[SEP]'] + utterance, 'types': [0] + [0 for _ in utterance]},
+                          'sql': {'tokens': ['[SEP]'] + sql, 'types': [0] + self.get_sql_type(sql, item['split_database'])}}
             split_interaction.append(split_pair)
             item['split_pair'] = split_interaction
             max_legth['db'] = max(max_legth['db'], len(item['split_database']['tokens']))
+            legth['sql'].append(len(item['split_database']['tokens']))
 
         # 再找dev最大长度
         for item in self.dev_ori:
@@ -173,27 +198,64 @@ class DataSetLoad():
             item['split_database'] = self.database_schema[item['database_id']]['split_database']
             turn = len(item['interaction'])
             max_legth['turn'] = max(max_legth['turn'], turn + 1)
+            legth['turn'].append(turn + 1)
             for pair in item['interaction']:
                 utterance = re.split('[ _]', pair['utterance'].lower())
                 sql = list(pair['sql'][0][0])
-                max_legth['sql'] = max(max_legth['sql'], len(sql)+1)
-                max_legth['utter'] = max(max_legth['utter'], len(utterance)+1)
-                split_pair = {'utterance': {'tokens': ['<utter>'] + utterance, 'types': [0]+[0 for _ in utterance]},
-                              'sql': {'tokens': ['<sql>'] + sql, 'types': [0]+self.get_sql_type(sql, item['split_database'])}}
+                max_legth['sql'] = max(max_legth['sql'], len(sql) + 1)
+                max_legth['utter'] = max(max_legth['utter'], len(utterance) + 1)
+                legth['sql'].append(len(sql) + 1)
+                legth['utter'].append(len(utterance) + 1)
+                split_pair = {'utterance': {'tokens': ['[SEP]'] + utterance, 'types': [0] + [0 for _ in utterance]},
+                              'sql': {'tokens': ['[SEP]'] + sql,
+                                      'types': [0] + self.get_sql_type(sql, item['split_database'])}}
                 split_interaction.append(split_pair)
             utterance = re.split('[ _]', item['final']['utterance'].lower())
             sql = re.split('[ _]', item['final']['sql'].lower())
-            max_legth['sql'] = max(max_legth['sql'], len(sql)+1)
-            max_legth['utter'] = max(max_legth['utter'], len(utterance)+1)
-            split_pair = {'utterance': {'tokens': ['<utter>'] + utterance, 'types': [0] + [0 for _ in utterance]},
-                          'sql': {'tokens': ['<sql>'] + sql, 'types': [0] + self.get_sql_type(sql, item['split_database'])}}
+            max_legth['sql'] = max(max_legth['sql'], len(sql) + 1)
+            max_legth['utter'] = max(max_legth['utter'], len(utterance) + 1)
+            legth['sql'].append(len(sql) + 1)
+            legth['utter'].append(len(utterance) + 1)
+            split_pair = {'utterance': {'tokens': ['[SEP]'] + utterance, 'types': [0] + [0 for _ in utterance]},
+                          'sql': {'tokens': ['[SEP]'] + sql,
+                                  'types': [0] + self.get_sql_type(sql, item['split_database'])}}
             split_interaction.append(split_pair)
             item['split_pair'] = split_interaction
             max_legth['db'] = max(max_legth['db'], len(item['split_database']['tokens']))
+            legth['db'].append(len(item['split_database']['tokens']))
 
+        # self.plt_length(legth)
         return max_legth
 
-dataset = DataSetLoad(1)
+    # 统计长度图
+    def plt_length(self, legth):
+        _type = 'utter'
+        length = dict(Counter(legth[_type]))
+
+        xs = list(sorted(length.keys(), reverse=True))
+        ys = [length[i] for i in xs]
+
+        file = open(_type+'_sum.txt', 'w')
+        sum = 0
+        for fx, fy in zip(xs, ys):
+            sum += fy
+            file.write(str(fx))
+            file.write(' ')
+            file.write(str(sum))
+            file.write('\n')
+        file.close()
+
+        plt.plot(xs, ys)
+        plt.xlabel('length')
+        plt.ylabel('num')
+        plt.legend()
+        # plt.savefig(_type+'.png')
+        plt.show()
+        print(1)
+
+
+if __name__ == '__main__':
+    dataset = DataSetLoad(1)
 
 
 # TODO：dataset的格式参考model的forward函数
