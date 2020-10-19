@@ -56,3 +56,10 @@ class Model(nn.Module):
         # 5，取最高层的表示，与输出embedding进行乘积，得到每个step上每个候选单词的概率
         x = self.output_embedding(x)
         return x
+        '''
+        :param position: -
+        :param modality: 0 无， 1 table 2 column 3 keyword 4 自然语言
+        :param temporal: 0 db， 第一轮：1 ，，，
+        :param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
+        
+        '''
