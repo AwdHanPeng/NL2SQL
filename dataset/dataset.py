@@ -327,6 +327,7 @@ class DataSetLoad():
         plt.legend()
         plt.savefig('data_output/'+_type+'.png')
         # plt.show()
+        plt.close('all')
 
     # 修改最大长度
     def re_length(self, legth):
@@ -343,8 +344,6 @@ if __name__ == '__main__':
     dataset = DataSetLoad(opt)
     train_dataset = dataset.train
     dev_dataset = dataset.dev
-    for batch in train_dataset:
-        print(batch)
 
 
 '''

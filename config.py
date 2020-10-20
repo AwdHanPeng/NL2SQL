@@ -10,7 +10,7 @@ class DefaultConfig(object):
     max_length = {
         'sql': 65,
         'utter': 25,
-        'db': 200,
+        'db': 300,
         'turn': 7
     }
 
