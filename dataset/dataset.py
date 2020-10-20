@@ -9,10 +9,7 @@ from config import opt
 import torch
 
 
-# 将数据改为全序列形式并添加<PAD>, 单个数据形式 [columns,u1,s1,u2,s2...u_m,s_m]
-'''
-截断机制未设计好
-'''
+# 将数据改为全序列形式并添加<PAD>, 单个数据形式 [columns,u1,s1,u2,s2...u_m,s_m]，s_m为希望预测获得的sql
 class DataLoad(Dataset):
     def __init__(self, max_length, data_ori):
         self.max_length = max_length
@@ -23,41 +20,61 @@ class DataLoad(Dataset):
             self.data.append(self.get_seq(item['split_database'], item['split_pair']))
 
     def get_seq(self, database, pair):
-        _data = ['[PAD]' for _ in range(self.max_length['db'] + self.max_length['turn'] * (self.max_length['utter'] + self.max_length['sql']))]
-        _type = [0 for _ in range(self.max_length['db'] + self.max_length['turn'] * (self.max_length['utter'] + self.max_length['sql']))]
-        _temporal = _type
-        _modality = _type
+        # 先将db加入序列
+        db_data = ['[PAD]' for _ in range(self.max_length['db'])]
+        db_db = [0 for _ in range(self.max_length['db'])]
+        db_temporal = [0 for _ in range(self.max_length['db'])]
+        db_modality = [0 for _ in range(self.max_length['db'])]
+        index = 0
         for index in range(len(database['tokens'])):
-            if index >= self.max_length['db']:
+            if index + 1 >= self.max_length['db']:
+                while db_data[index] != '[SEP]':
+                    db_data[index] = '[PAD]'
+                    db_db[index] = db_modality[index] = db_temporal[index] = 0
+                    index -= 1
                 break
-            _data[index] = database['tokens'][index]
-            _type[index] = database['db_signal'][index]
-            _modality[index] = database['modality_signal'][index]
-            _temporal[index] = database['temporal_signal'][index]
+            db_data[index] = database['tokens'][index]
+            db_db[index] = database['db_signal'][index]
+            db_modality[index] = database['modality_signal'][index]
+            db_temporal[index] = database['temporal_signal'][index]
+        db_db[0] = db_db[1] = -1
+        # 按轮数将utter和sql加入序列
+        data = []
         for turn in range(len(pair)):
-            if turn >= self.max_length['turn']:
-                break
+            # 先处理utter
+            utter_data = ['[PAD]' for _ in range(self.max_length['utter'])]
+            utter_db = [0 for _ in range(self.max_length['utter'])]
+            utter_temporal = [0 for _ in range(self.max_length['utter'])]
+            utter_modality = [0 for _ in range(self.max_length['utter'])]
             for index in range(len(pair[turn]['utter']['content'])):
-                _data[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
-                    = pair[turn]['utter']['content'][index]
-                _type[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
-                    = pair[turn]['utter']['db_signal'][index]
-                _temporal[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
-                    = pair[turn]['utter']['temporal_signal'][index]
-                _modality[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
-                    = pair[turn]['utter']['modality_signal'][index]
-            sql_begin = self.max_length['db'] + self.max_length['utter']
+                if index >= self.max_length['utter']:
+                    utter_data[index-1] = '[SEP]'
+                    utter_modality[index-1] = 0
+                    break
+                utter_data[index] = pair[turn]['utter']['content'][index]
+                utter_db[index] = pair[turn]['utter']['db_signal'][index]
+                utter_temporal[index] = pair[turn]['utter']['temporal_signal'][index]
+                utter_modality[index] = pair[turn]['utter']['modality_signal'][index]
+            # 再处理sql
+            sql_data = ['[PAD]' for _ in range(self.max_length['sql'])]
+            sql_db = [0 for _ in range(self.max_length['sql'])]
+            sql_temporal = [0 for _ in range(self.max_length['sql'])]
+            sql_modality = [0 for _ in range(self.max_length['sql'])]
             for index in range(len(pair[turn]['sql']['content'])):
-                _data[index + turn * (self.max_length['utter'] + self.max_length['sql']) + sql_begin] \
-                    = pair[turn]['sql']['content'][index]
-                _type[index + turn * (self.max_length['utter'] + self.max_length['sql']) + sql_begin] \
-                    = pair[turn]['sql']['db_signal'][index]
-                _temporal[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
-                    = pair[turn]['sql']['temporal_signal'][index]
-                _modality[index + turn * (self.max_length['utter'] + self.max_length['sql']) + self.max_length['db']] \
-                    = pair[turn]['sql']['modality_signal'][index]
-        _data[0] = '[CLS]'
-        return {'content': _data, 'db_signal': _type, 'temporal_signal': _temporal, 'modality_signal': _modality}
+                if index >= self.max_length['sql']:
+                    sql_data[index - 1] = '[SEP]'
+                    sql_modality[index - 1] = 0
+                    break
+                sql_data[index] = pair[turn]['sql']['content'][index]
+                sql_db[index] = pair[turn]['sql']['db_signal'][index]
+                sql_temporal[index] = pair[turn]['sql']['temporal_signal'][index]
+                sql_modality[index] = pair[turn]['sql']['modality_signal'][index]
+            turn_data = db_data + utter_data + sql_data
+            turn_db = db_db + utter_db + sql_db
+            turn_temporal = db_temporal + utter_temporal + sql_temporal
+            turn_modality = db_modality + utter_modality + sql_modality
+            data.append({'content': turn_data, 'db_signal': turn_db, 'temporal_signal': turn_temporal, 'modality_signal': turn_modality})
+        return data
 
     def __getitem__(self, index):
         assert index < len(self.data)
@@ -118,8 +135,8 @@ class DataSetLoad():
                     split_database['db_signal'] += [table_num for i in split_table]
                     split_database['modality_signal'] += [1]
                     split_database['modality_signal'] += [1 for i in split_table]
-                    split_database['temporal_signal'] += [0]
-                    split_database['temporal_signal'] += [0 for i in split_table]
+                    split_database['temporal_signal'] += [-1]
+                    split_database['temporal_signal'] += [-1 for i in split_table]
                 # 处理column
                 split_column = re.split('[ _]', column[1])
                 split_database['tokens'] += ['[SEP]']
@@ -128,8 +145,13 @@ class DataSetLoad():
                 split_database['db_signal'] += [table_num for i in split_column]
                 split_database['modality_signal'] += [2]
                 split_database['modality_signal'] += [2 for i in split_column]
-                split_database['temporal_signal'] += [0]
-                split_database['temporal_signal'] += [0 for i in split_column]
+                split_database['temporal_signal'] += [-1]
+                split_database['temporal_signal'] += [-1 for i in split_column]
+            # 结尾附加SEP
+            split_database['tokens'] += ['[SEP]']
+            split_database['db_signal'] += [0]
+            split_database['modality_signal'] += [0]
+            split_database['temporal_signal'] += [-1]
             table_schema['split_database'] = split_database
             database_schema_dict[db_id] = table_schema
             column_names = table_schema['column_names']
@@ -279,24 +301,52 @@ class DataSetLoad():
             legth['utter'].append(len(utterance) + 1)
             legth['db'].append(len(item['split_database']['tokens']))
 
-        # self.plt_length(legth)
+        self.plt_length(legth, 'turn')
+        self.plt_length(legth, 'sql')
+        self.plt_length(legth, 'utter')
+        self.plt_length(legth, 'db')
         return max_legth
 
     # 统计长度
-    def plt_length(self, legth):
-        _type = 'turn'
+    def plt_length(self, legth, _type):
         length = dict(Counter(legth[_type]))
+        xs = list(sorted(length.keys(), reverse=False))
+        ys = [length[i] for i in xs]
+        file = open(_type + '.txt', 'w')
+        sum = 0
+        for fx, fy in zip(xs, ys):
+            sum += fy
+            file.write(str(fx))
+            file.write(' ')
+            file.write(str(fy))
+            file.write('\n')
+        file.close()
+        plt.plot(xs, ys)
+        plt.xlabel(_type+'_length')
+        plt.ylabel('num')
+        plt.legend()
+        plt.savefig('data_output/'+_type+'.png')
+        # plt.show()
+
+    # 修改最大长度
+    def re_length(self, legth):
+        assert ('db' in legth) and ('turn' in legth) and ('utter' in legth) and (
+                'sql' in legth), "wrong keys in legth!"
+        self.max_length = legth
+
+        # 更新数据
+        self.train = DataLoad(self.max_length, self.train_ori)
+        self.dev = DataLoad(self.max_length, self.dev_ori)
 
 
 if __name__ == '__main__':
-    from torch.utils.data import DataLoader
-
-    dataset = DataSetLoad(1)
+    dataset = DataSetLoad(opt)
     train_dataset = dataset.train
     dev_dataset = dataset.dev
-    train_data_loader = DataLoader(train_dataset, batch_size=3)
-    for batch in train_data_loader:
+    for batch in train_dataset:
         print(batch)
+
+
 '''
 
 
@@ -345,42 +395,8 @@ __getitem__:
 concat
 ] 
 <<<<<<<  将Table，Column，utterance1，sql1拼接起来 长度等于 tl+cl+ul+sl 的， 
->>>>>>> upstream/main
 
-        xs = list(sorted(length.keys(), reverse=False))
-        ys = [length[i] for i in xs]
-
-<<<<<<< HEAD
-        file = open(_type+'.txt', 'w')
-        sum = 0
-        for fx, fy in zip(xs, ys):
-            sum += fy
-            file.write(str(fx))
-            file.write(' ')
-            file.write(str(fy))
-            file.write('\n')
-        file.close()
-
-        plt.plot(xs, ys)
-        plt.xlabel('length')
-        plt.ylabel('num')
-        plt.legend()
-        # plt.savefig('data_output/'+_type+'.png')
-        plt.show()
-        print(1)
-
-    # 修改最大长度
-    def re_length(self, legth):
-        assert ('db' in legth) and ('turn' in legth) and ('utter' in legth) and ('sql' in legth), "wrong keys in legth!"
-        self.max_length = legth
-
-        # 更新数据
-        self.train = DataLoad(self.max_length, self.train_ori)
-        self.dev = DataLoad(self.max_length, self.dev_ori)
-
-
-if __name__ == '__main__':
-    dataset = DataSetLoad(opt)
+    
 
 =======
 'Modality':
