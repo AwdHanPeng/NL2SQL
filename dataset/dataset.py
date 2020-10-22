@@ -1,4 +1,3 @@
-# TODO：创建读取SPARC和COSQL的dataset文件
 import json
 import pickle
 import re
@@ -415,8 +414,10 @@ db 0 无  1 table1 2 table2 3 table3 先不考虑sql
 
 :param position: -
 :param modality: 0 无， 1 table 2 column 3 keyword 4 自然语言
-:param temporal: 0 db， 第一轮：1 ，，，
-:param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
+:param temporal: -1 db，0无，  第一轮：1 ，，，
+:param db 0 无  -1 * ，1 table1 2 table2 3 table3 先不考虑sql
 
+改动：特殊符号处全部设为0
+有-1的 全部往上递增， 因为embedding查表的时候-1查不了
 
 '''

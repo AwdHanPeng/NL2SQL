@@ -83,7 +83,7 @@ class Trainer:
 
         for i, data in data_iter:
             # 0. batch_data will be sent into the device(GPU or cpu)
-            data = {key: value.to(self.device) for key, value in data.items()}
+            # data = {key: value.to(self.device) for key, value in data.items()}
 
             # 1. forward the input and all position labels
             generated_sql = self.model(data)
