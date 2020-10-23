@@ -87,9 +87,10 @@ class InputEmbedding(nn.Module):
         elif type == 'db_signal':
             return self.db_embedding(signal)
         else:
-            raise Exception('Valid Signal Type')
+            raise Exception('Invalid Signal Type')
 
     def forward(self, data):
+        print('You had better not use this func')
         content_embedding = self.pre_train_embedding(data['content'])
         position_embedding = self.position_embedding(content_embedding)
         temporal_embedding = self.position_embedding(data['temporal_signal'])
