@@ -22,7 +22,7 @@ class Model(nn.Module):
         self.decoder_rnn_output_size = args.decodernn_output
 
         # embedding for BERT, sum of several embeddings
-        self.input_embedding, self.output_embedding = InputEmbedding(args), OutputEmbedding(args)
+        self.input_embedding, self.output_keyword_embedding = InputEmbedding(args), OutputEmbedding(args)
 
         self.transformer_encoder_layer = TransformerEncoderLayer(d_model=self.hidden, nhead=self.attn_heads)
         self.transformer_encoder = TransformerEncoder(encoder_layer=self.transformer_encoder_layer,
@@ -231,10 +231,10 @@ class Model(nn.Module):
         turn_batch_db_fuse_feature = self.tranform_fuse_db_feature(turn_batch_db_fuse_feature)
         return turn_batch_db_fuse_feature
 
-    def built_output_dbembedding(self, turn_batch_feature, data):
+    def built_output_dbembedding(self, turn_batch_db_fuse_feature, data):
         '''
-        convert turn_batch_feature into a embedding lookup table whose size is (# turn-1,real_db_len,hidden)
-        :param turn_batch_feature: #(turn-1,db_len,hidden)
+        convert turn_batch_db_fuse_feature into a embedding lookup table whose size is (# turn-1,real_db_len,hidden)
+        :param turn_batch_db_fuse_feature: #(turn-1,db_len,hidden)
         :param data:
         :return:
         '''
@@ -243,7 +243,7 @@ class Model(nn.Module):
         def get_feature_from_idxs(idxs):
             # for a word group, we get and sum all word embedding to express this whole embedding
             # (turn-1,hidden)
-            return torch.stack([turn_batch_feature[:, idx, :] for idx in idxs], dim=1).sum(dim=1)
+            return torch.stack([turn_batch_db_fuse_feature[:, idx, :] for idx in idxs], dim=1).sum(dim=-1)
 
         def fuse_table_on_column(table_embedding, column_embedding):
             # fuse table embedding into column embedding to enhance column expression
@@ -291,19 +291,34 @@ class Model(nn.Module):
         star_column = get_feature_from_idxs([1])
         column2table, content = column2table[3:], content[3:]  # remove [sep] * [sep]
         embedding_matrix, dict_list = get_embedding_strdict(column2table, content)  # [(turn-1,hidden)*real_len]
-        # embedding_matrix = torch.stack(embedding_matrix, dim=1)
+        embedding_matrix = torch.stack(embedding_matrix, dim=1)  # (turn-1,db_units_num,hidden)
         return embedding_matrix, dict_list
 
-    def lookup_from_dbembedding(self, db_embedding_matrix, db_dict_list, data):
+    def lookup_from_dbembedding(self, db_embedding_matrix, db_dict_list, source_sql):
         '''
         get sql from each item of data, and convert into embedding using pre-built dbembedding matrix
-        :param db_embedding_matrix: # [(turn-1,hidden)*real_len]
+        :param db_embedding_matrix: # (turn-1,db_units_num,hidden)
         :param db_dict_list: # [(str)*real_len] str is : A_1 A_2 . c_1 c_2
-        :param data:
-        :return: decoder_input_sql_embedding : (turn_num - 1, self.decode_length, self.hidden)
+        :param source_sql:[['Select','From','A_1 A_2 . b_1 b_2',...]]*(turns-1)
+        :return: decoder_source_sql_embedding : (turn_num - 1, self.decode_length, self.hidden)
         '''
         # TODO: should convert sql text into embedding
-        pass
+        assert len(source_sql) == db_embedding_matrix.shape(0)
+        batch_sql_embeddings = []
+        for i in range(len(source_sql)):
+            turn_db_embedding = db_embedding_matrix[i, :, :]
+            sql_embeddings = []
+            for item in source_sql[i]:
+                if item in db_dict_list:
+                    unit_embedding = turn_db_embedding[db_dict_list.index(item), :].squeeze()
+                else:
+                    unit_embedding = self.output_keyword_embedding.convert_str_to_embedding(item).squeeze()
+                sql_embeddings.append(unit_embedding)
+            sql_embeddings = torch.stack(sql_embeddings, dim=0)  # unit_num,hidden
+            batch_sql_embeddings.append(sql_embeddings)
+        batch_sql_embeddings = torch.stack(batch_sql_embeddings, dim=0)  # turns-1,unit_num,hidden
+        assert self.decode_length == batch_sql_embeddings.shape(1)  # unit_num is decode length
+        return batch_sql_embeddings
 
     def forward(self, data):
         '''
@@ -353,11 +368,12 @@ class Model(nn.Module):
         # lookup from column2table and build db embedding from turn_batch_db_fuse_feature
         db_embedding_matrix, db_dict_list = self.built_output_dbembedding(turn_batch_db_fuse_feature, data)
 
-        decoder_input_sql_embedding = self.lookup_from_dbembedding(db_embedding_matrix, db_dict_list, data)
+        source_sql, target_sql = [item['sql'] for item in data][1:], [item['shift_sql'] for item in data][1:]
+        decoder_input_sql_embedding = self.lookup_from_dbembedding(db_embedding_matrix, db_dict_list, source_sql)
 
         turn_batch_final_feature = self.hierarchial_decode(turn_batch_feature, turn_utter_encoder_feature,
                                                            decoder_input_sql_embedding)
-
+        # TODO:
         # turn_batch_prob = self.output_embedding(turn_batch_final_feature) #turn_batch_final_feature
 
         # turn_batch_prob = self.output_prob(turn_batch_final_feature)

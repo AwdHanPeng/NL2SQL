@@ -53,4 +53,5 @@ def get_embedding_strdict(column2table, content):
 
 print(get_embedding_strdict(column2table, content))
 
-sql = ['Select', 'from', 'A1 A2 . c1 c2']
+source_sql = ['[SEP]', 'Select', 'from', 'A1 A2 . c1 c2', ..., '[PAD]', '[PAD]']
+target_sql = ['Select', 'from', 'A1 A2 . c1 c2', ..., '[SEP]', '[PAD]', '[PAD]']

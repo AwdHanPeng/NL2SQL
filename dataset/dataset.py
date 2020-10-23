@@ -421,3 +421,14 @@ db 0 无  1 table1 2 table2 3 table3 先不考虑sql
 有-1的 全部往上递增， 因为embedding查表的时候-1查不了
 
 '''
+'''
+content:
+['select','A_1','A_2','.','b_1','b_2','group','by',....]
+
+source_sql:
+['[SEP]','select','A_1 A_2 . b_1 b_2','group_by',...]
+
+target_sql:
+['select','A_1 A_2 . b_1 b_2','gruop_by',....]
+
+'''

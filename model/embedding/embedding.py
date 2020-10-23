@@ -105,9 +105,34 @@ class OutputEmbedding(nn.Module):
     # TODO：解决计算输出概率的问题
     def __init__(self, args):
         super().__init__()
+        self.dict = ['[PAD]', '[SEP]', '=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
+                     '+', '/']
 
-    def forward(self, ):
-        pass
+        # TODO: we should confirm the keyword dict
+        self.embedding = nn.Embedding(num_embeddings=len(self.dict), embedding_dim=args.hidden, padding_idx=0)
+
+    def convert_str_to_embedding(self, item):
+        '''
+
+        :param item: a str token
+        :return:
+        '''
+        if item in self.dict:
+            return self.embedding(self.dict.index(item)).squeeze()
+        else:
+            raise Exception('This token {} is not in output embedding dict!'.format(item))
+
+
+
+    def forward(self, data):
+        '''
+
+        :param data: * ->  bs*len(sql)
+        :return: * N
+        '''
+
 
 
 if __name__ == '__main__':
