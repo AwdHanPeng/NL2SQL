@@ -112,6 +112,7 @@ class OutputEmbedding(nn.Module):
 
         # TODO: we should confirm the keyword dict
         self.embedding = nn.Embedding(num_embeddings=len(self.dict), embedding_dim=args.hidden, padding_idx=0)
+        self.transform_keyword_dist = nn.Linear(self.hidden, len(self.dict))
 
     def convert_str_to_embedding(self, item):
         '''
@@ -124,7 +125,24 @@ class OutputEmbedding(nn.Module):
         else:
             raise Exception('This token {} is not in output embedding dict!'.format(item))
 
+    def find_str_idx(self, item):
+        '''
 
+        :param item: a str token
+        :return:
+        '''
+        if item in self.dict:
+            return self.dict.index(item)
+        else:
+            raise Exception('This token {} is not in output embedding dict!'.format(item))
+
+    def convert_embedding_to_dist(self, features):
+        '''
+
+        :param features: (bs,decoder_len,hidden)
+        :return: (bs,decoder_len,len(keywords))
+        '''
+        return self.transform_keyword_dist(features)
 
     def forward(self, data):
         '''
@@ -132,7 +150,6 @@ class OutputEmbedding(nn.Module):
         :param data: * ->  bs*len(sql)
         :return: * N
         '''
-
 
 
 if __name__ == '__main__':
