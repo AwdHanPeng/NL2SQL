@@ -389,6 +389,7 @@ class Model(nn.Module):
         source sql -> text list included sql for this turn, feed into decoder, ['SEP'] in first
         target sql -> text list included sql for this turn, for predict, ['SEP'] in last
         mask -> int list for transformer mask
+        column2table -> int list for merge table/column expression
         :return: loss sum and loss list
         '''
 
