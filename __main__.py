@@ -1,7 +1,7 @@
 import argparse
 
 from torch.utils.data import DataLoader
-from .dataset import Dataset
+from .dataset import DataSetLoad
 from .model import Model
 from .trainer import Trainer
 
@@ -18,9 +18,12 @@ def train():
     parser.add_argument("-a", "--attn_heads", type=int, default=8, help="number of attention heads")
     parser.add_argument("-ul", "--utter_len", type=int, default=20, help="maximum sequence length of utterance")
     parser.add_argument("-sl", "--sql_len", type=int, default=20, help="maximum sequence length of sql")
+    parser.add_argument("-dl", "--db_len", type=int, default=20,
+                        help="maximum sequence length of db (column and table)")
+
     parser.add_argument("-tn", "--turn", type=int, default=20, help="maximum turn number of dialogue")
 
-    parser.add_argument("-b", "--batch_size", type=int, default=64, help="number of batch_size")
+    # parser.add_argument("-b", "--batch_size", type=int, default=64, help="number of batch_size")
     parser.add_argument("-e", "--epochs", type=int, default=10, help="number of epochs")
     parser.add_argument("-w", "--num_workers", type=int, default=5, help="dataloader worker size")
 
@@ -35,22 +38,19 @@ def train():
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="adam first beta value")
 
     args = parser.parse_args()
+    print("Loading Dataset", args.train_dataset)
+    dataset = DataSetLoad(args)
     print("Loading Train Dataset", args.train_dataset)
-    train_dataset = Dataset()
+    train_data_loader = dataset.train
 
-    print("Loading Test Dataset", args.test_dataset)
-    test_dataset = Dataset() if args.test_dataset is not None else None
-
-    print("Creating Dataloader")
-    train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
-    test_data_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers) \
-        if test_dataset is not None else None
+    print("Loading test Dataset", args.test_dataset)
+    test_data_loader = dataset.dev if args.test_dataset is not None else None
 
     print("Building NL2SQL model")
     model = Model()
 
     print("Creating BERT Trainer")
-    trainer = Trainer(model, train_dataloader=train_data_loader, test_dataloader=test_data_loader,
+    trainer = Trainer(model, train_dataloader=train_data_loader.data, test_dataloader=test_data_loader.data,
                       lr=args.lr, betas=(args.adam_beta1, args.adam_beta2), weight_decay=args.adam_weight_decay,
                       with_cuda=args.with_cuda, cuda_devices=args.cuda_devices, log_freq=args.log_freq)
 

@@ -41,25 +41,63 @@ class InputEmbedding(nn.Module):
         self.hidden = args.hidden
         self.total_len = args.total_len
         self.max_turn = args.turn
+        self.max_table = args.max_table
         self.position_embedding = PositionalEmbedding(d_model=self.hidden, total_len=self.total_len)
 
         self.temporal_embedding = TemporalEmbedding(max_turn=self.max_turn, embed_size=self.hidden)
 
         self.modality_embedding = ModalityEmbedding(embed_size=self.hidden)
 
-        self.db_embedding = DBEmbedding(embed_size=self.hidden)
+        self.db_embedding = DBEmbedding(max_table=self.max_table, embed_size=self.hidden)
         if args.bert:
             self.pre_train_embedding = PreTrainBert(args)
 
-    def forward(self, data):
-        content_embedding = self.pre_train_embedding(data['content'])
+    def create_batch(self, data):
+        batch_text = [item['content'].join(' ') for item in data]
+        self.batch_size = len(self.batch_text)
+        return batch_text
 
+    def parse_batch_content(self, batch_content):
+        '''
+        :param batch_content: [str1,str2]
+        :return: bs,total,hidden
+        '''
+        batch_size = len(batch_content)
+        batch_content_embedding = self.pre_train_embedding(batch_content)
+        assert batch_content_embedding.shape == (batch_size, self.total_len, self.hidden)
+        return batch_content_embedding
+
+    def parse_content(self, content):
+        '''
+        :param content: [str1]
+        :return: total_len,hidden
+        '''
+        assert len(content) == 1
+        content_embedding = self.pre_train_embedding([content])[0, :, :]
+        assert content_embedding.shape == (self.total_len, self.hidden)
+        return content_embedding
+
+    def parse_signal(self, signal, type):
+        if type == 'temporal_signal':
+            return self.temporal_embedding(signal)
+        elif type == 'modality_signal':
+            return self.modality_embedding(signal)
+        elif type == 'position_signal':
+            return self.position_embedding(signal)
+        elif type == 'db_signal':
+            return self.db_embedding(signal)
+        else:
+            raise Exception('Invalid Signal Type')
+
+    def forward(self, data):
+        print('You had better not use this func')
+        content_embedding = self.pre_train_embedding(data['content'])
         position_embedding = self.position_embedding(content_embedding)
         temporal_embedding = self.position_embedding(data['temporal_signal'])
         modality_embedding = self.position_embedding(data['modality_signal'])
         db_embedding = self.position_embedding(data['db_signal'])
         signal_embedding = position_embedding + temporal_embedding + modality_embedding + db_embedding
-        # TODO:这里采用了bert表示和符号表示拼接的方式，以后可以再考虑
+
         return torch.cat((content_embedding, signal_embedding), dim=-1)
 
 
@@ -67,9 +105,51 @@ class OutputEmbedding(nn.Module):
     # TODO：解决计算输出概率的问题
     def __init__(self, args):
         super().__init__()
+        self.dict = ['[PAD]', '[SEP]', '=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
+                     '+', '/']
 
-    def forward(self, ):
-        pass
+        # TODO: we should confirm the keyword dict
+        self.embedding = nn.Embedding(num_embeddings=len(self.dict), embedding_dim=args.hidden, padding_idx=0)
+        self.transform_keyword_dist = nn.Linear(self.hidden, len(self.dict))
+
+    def convert_str_to_embedding(self, item):
+        '''
+
+        :param item: a str token
+        :return:
+        '''
+        if item in self.dict:
+            return self.embedding(self.dict.index(item)).squeeze()
+        else:
+            raise Exception('This token {} is not in output embedding dict!'.format(item))
+
+    def find_str_idx(self, item):
+        '''
+
+        :param item: a str token
+        :return:
+        '''
+        if item in self.dict:
+            return self.dict.index(item)
+        else:
+            raise Exception('This token {} is not in output embedding dict!'.format(item))
+
+    def convert_embedding_to_dist(self, features):
+        '''
+
+        :param features: (bs,decoder_len,hidden)
+        :return: (bs,decoder_len,len(keywords))
+        '''
+        return self.transform_keyword_dist(features)
+
+    def forward(self, data):
+        '''
+
+        :param data: * ->  bs*len(sql)
+        :return: * N
+        '''
 
 
 if __name__ == '__main__':

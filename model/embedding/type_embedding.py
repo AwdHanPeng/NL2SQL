@@ -26,17 +26,19 @@ class PositionalEmbedding(nn.Module):
 
 
 class TemporalEmbedding(nn.Embedding):
-    def __init__(self, max_turn, embed_size=512):
-        super().__init__(max_turn + 1, embed_size, padding_idx=0)
+    def __init__(self, max_turn, embed_size):
+        # 0 无, max_turn+1 db, 第一轮 1, 第二轮 2
+        super().__init__(max_turn + 2, embed_size, padding_idx=0)
 
 
 class ModalityEmbedding(nn.Embedding):
-    def __init__(self, embed_size=512):
+    def __init__(self, embed_size):
         # there Modality: DB, SQL, Text
-        super().__init__(4, embed_size, padding_idx=0)
+        # 0 无， 1 table 2 column 3 keyword 4 自然语言
+        super().__init__(5, embed_size, padding_idx=0)
 
 
 class DBEmbedding(nn.Embedding):
-    def __init__(self, embed_size=512):
-        # three DB element: Table && Column && SQL keywords
-        super().__init__(4, embed_size, padding_idx=0)
+    def __init__(self, max_table, embed_size):
+        # 0 无  ,max_table+1 * ，1 table1 2 table2 3 table3
+        super().__init__(max_table + 2, embed_size, padding_idx=0)
