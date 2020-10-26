@@ -13,7 +13,7 @@ class DefaultConfig(object):
         'db': 300,
         'turn': 7
     }
-    root = "F:/Github/NL2SQL/"
+    root = "../"
     raw_train_filename = root + "dataset/sparc_data_removefrom/train.pkl"
     raw_validation_filename = root + "dataset/sparc_data_removefrom/dev.pkl"
     database_schema_filename = root + "dataset/sparc_data_removefrom/tables.json"
@@ -52,3 +52,4 @@ def parse(self, kwargs):
 
 DefaultConfig.parse = parse
 opt = DefaultConfig()
+print(opt)

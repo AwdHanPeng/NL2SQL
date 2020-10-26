@@ -1,8 +1,5 @@
-# TODO: 导入预训练bert 输入并得到input的表示
-# TODO：创建不同类型的位置embedding，并加和
 import torch.nn as nn
 import torch
-import math
 
 from .type_embedding import PositionalEmbedding, TemporalEmbedding, ModalityEmbedding, DBEmbedding
 
@@ -10,8 +7,7 @@ from .type_embedding import PositionalEmbedding, TemporalEmbedding, ModalityEmbe
 class PreTrainBert(nn.Module):
     def __init__(self, args):
         super().__init__()
-        self.batch_size = args.batch_size
-        self.total_len = args.total_len
+        self.total_len = args.utter_len + args.sql_len + args.db_len
         from transformers import BertModel, BertTokenizer, BertConfig
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -23,7 +19,7 @@ class PreTrainBert(nn.Module):
         sentence should add special token before
         :return: shape: bs, total_len, hidden state of bert
         '''
-        assert len(data) == self.batch_size
+
         for item in data:
             assert len(item.split()) == self.total_len
 
@@ -38,24 +34,19 @@ class InputEmbedding(nn.Module):
 
     def __init__(self, args):
         super().__init__()
-        self.hidden = args.hidden
-        self.total_len = args.total_len
-        self.max_turn = args.turn
+        self.input_size = args.input_size
+        self.total_len = args.utter_len + args.sql_len + args.db_len
+        self.max_turn = args.max_turn
         self.max_table = args.max_table
-        self.position_embedding = PositionalEmbedding(d_model=self.hidden, total_len=self.total_len)
+        self.position_embedding = PositionalEmbedding(d_model=self.input_size, total_len=self.total_len)
 
-        self.temporal_embedding = TemporalEmbedding(max_turn=self.max_turn, embed_size=self.hidden)
+        self.temporal_embedding = TemporalEmbedding(max_turn=self.turn_num, embed_size=self.input_size)
 
-        self.modality_embedding = ModalityEmbedding(embed_size=self.hidden)
+        self.modality_embedding = ModalityEmbedding(embed_size=self.input_size)
 
-        self.db_embedding = DBEmbedding(max_table=self.max_table, embed_size=self.hidden)
+        self.db_embedding = DBEmbedding(max_table=self.max_table, embed_size=self.input_size)
         if args.bert:
             self.pre_train_embedding = PreTrainBert(args)
-
-    def create_batch(self, data):
-        batch_text = [item['content'].join(' ') for item in data]
-        self.batch_size = len(self.batch_text)
-        return batch_text
 
     def parse_batch_content(self, batch_content):
         '''
@@ -64,7 +55,7 @@ class InputEmbedding(nn.Module):
         '''
         batch_size = len(batch_content)
         batch_content_embedding = self.pre_train_embedding(batch_content)
-        assert batch_content_embedding.shape == (batch_size, self.total_len, self.hidden)
+        assert batch_content_embedding.shape == (batch_size, self.total_len, self.input_size)
         return batch_content_embedding
 
     def parse_content(self, content):
@@ -74,7 +65,7 @@ class InputEmbedding(nn.Module):
         '''
         assert len(content) == 1
         content_embedding = self.pre_train_embedding([content])[0, :, :]
-        assert content_embedding.shape == (self.total_len, self.hidden)
+        assert content_embedding.shape == (self.total_len, self.input_size)
         return content_embedding
 
     def parse_signal(self, signal, type):
@@ -102,7 +93,7 @@ class InputEmbedding(nn.Module):
 
 
 class OutputEmbedding(nn.Module):
-    # TODO：解决计算输出概率的问题
+
     def __init__(self, args):
         super().__init__()
         self.dict = ['[PAD]', '[SEP]', '=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
@@ -110,7 +101,7 @@ class OutputEmbedding(nn.Module):
                      'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
                      '+', '/']
 
-        # TODO: we should confirm the keyword dict
+
         self.embedding = nn.Embedding(num_embeddings=len(self.dict), embedding_dim=args.hidden, padding_idx=0)
         self.transform_keyword_dist = nn.Linear(self.hidden, len(self.dict))
 
@@ -143,13 +134,6 @@ class OutputEmbedding(nn.Module):
         :return: (bs,decoder_len,len(keywords))
         '''
         return self.transform_keyword_dist(features)
-
-    def forward(self, data):
-        '''
-
-        :param data: * ->  bs*len(sql)
-        :return: * N
-        '''
 
 
 if __name__ == '__main__':

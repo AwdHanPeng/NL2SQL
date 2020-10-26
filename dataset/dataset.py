@@ -1,4 +1,4 @@
-# TODO：创建读取SPARC和COSQL的dataset文件
+
 import json
 import pickle
 import re
@@ -8,6 +8,7 @@ from collections import Counter
 from config import opt
 from data_util import ATISDataset
 import torch
+
 
 # 加mask 类似db <SEP>utter <SEP>sql sql<SEP> (sql：组合每个column) -1改成turn+1
 # 将数据改为全序列形式并添加<PAD>, 单个数据形式 [columns,u1,s1,u2,s2...u_m,s_m]，s_m为希望预测获得的sql
@@ -48,7 +49,7 @@ class DataLoad(Dataset):
             db_data[index] = database['tokens'][index]
             db_db[index] = database['db_signal'][index]
             db_modality[index] = database['modality_signal'][index]
-            db_temporal[index] = self.max_length['turn']+1
+            db_temporal[index] = self.max_length['turn'] + 1
             if db_data[index] != '[SEP]':
                 db_mask[index] = 1
             column4table[index] = db_db[index]
@@ -61,7 +62,7 @@ class DataLoad(Dataset):
                 column2table[index] = table_loc
             # db_temporal[index] = database['temporal_signal'][index]
         # * 的db_signal也设置为最大轮数+1
-        db_db[1] = self.max_length['turn']+1
+        db_db[1] = self.max_length['turn'] + 1
         # 按轮数将utter和sql加入序列
         data = []
         for turn in range(len(pair)):
@@ -73,8 +74,8 @@ class DataLoad(Dataset):
             utter_mask = [0 for _ in range(self.max_length['utter'])]
             for index in range(len(pair[turn]['utter']['content'])):
                 if index >= self.max_length['utter']:
-                    utter_data[index-1] = '[SEP]'
-                    utter_modality[index-1] = 0
+                    utter_data[index - 1] = '[SEP]'
+                    utter_modality[index - 1] = 0
                     break
                 utter_data[index] = pair[turn]['utter']['content'][index]
                 utter_db[index] = pair[turn]['utter']['db_signal'][index]
@@ -104,10 +105,11 @@ class DataLoad(Dataset):
             turn_temporal = db_temporal + utter_temporal + sql_temporal
             turn_modality = db_modality + utter_modality + sql_modality
             turn_mask = db_mask + utter_mask + sql_mask
-            core = {'content': turn_data, 'db_signal': turn_db, 'temporal_signal': turn_temporal, 'modality_signal': turn_modality, 'mask_signal': turn_mask}
+            core = {'content': turn_data, 'db_signal': turn_db, 'temporal_signal': turn_temporal,
+                    'modality_signal': turn_modality, 'mask_signal': turn_mask}
             # 制作附加信息
             sql1 = pair[turn]['sql']['source']
-            sql2 = sql1[1:]+['[SEP]']
+            sql2 = sql1[1:] + ['[SEP]']
             utter = pair[turn]['utter']['utter']
             core['column4table'] = column4table
             core['column2table'] = column2table
@@ -175,6 +177,7 @@ class ATIS_DataSetLoad():
     :param temporal: 0 db， 第一轮：1 ，，，
     :param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
     '''
+
     def get_pair_type(self, turn, sql, utter, schema):
         # 计算sql
         content = []
@@ -189,7 +192,7 @@ class ATIS_DataSetLoad():
                 for letter in item:
                     if letter == '.':
                         table = item[:cut]
-                        column = item[(cut+1):]
+                        column = item[(cut + 1):]
                     cut += 1
                 table = re.split('[ _]', table)
                 column = re.split('[ _]', column)
@@ -334,10 +337,10 @@ class ATIS_DataSetLoad():
             file.write('\n')
         file.close()
         plt.plot(xs, ys)
-        plt.xlabel(_type+'_length')
+        plt.xlabel(_type + '_length')
         plt.ylabel('num')
         plt.legend()
-        plt.savefig('data_output/'+_type+'.png')
+        plt.savefig('data_output/' + _type + '.png')
         # plt.show()
         plt.close('all')
 
@@ -359,12 +362,11 @@ class DataSetLoad():
         if folder == '':
             self.root = dataname
 
-
         # 文件中提取
-        self.database_schema, self.column_names_surface_form, self.column_names_embedder_input =\
+        self.database_schema, self.column_names_surface_form, self.column_names_embedder_input = \
             self.read_database(self.root)
-        self.train_ori = pickle.load(open(self.root+'/'+'train.pkl', "rb+"))
-        self.dev_ori = pickle.load(open(self.root+'/'+'dev.pkl', "rb+"))
+        self.train_ori = pickle.load(open(self.root + '/' + 'train.pkl', "rb+"))
+        self.dev_ori = pickle.load(open(self.root + '/' + 'dev.pkl', "rb+"))
 
         self.atis = ATISDataset(opt)
 
@@ -499,12 +501,14 @@ class DataSetLoad():
                 modality_type += [2 for _ in range(stat)]
         temporal_type = [turn for _ in sql]
         db_type = [0 for _ in sql]
-        sql = {'content': ['[SEP]']+sql+['[SEP]'], 'modality_signal': [0]+modality_type+[0], 'temporal_signal': [turn]+temporal_type+[turn], 'db_signal': [0]+db_type+[0]}
+        sql = {'content': ['[SEP]'] + sql + ['[SEP]'], 'modality_signal': [0] + modality_type + [0],
+               'temporal_signal': [turn] + temporal_type + [turn], 'db_signal': [0] + db_type + [0]}
         # 计算utter
         temporal_type = [turn for _ in utter]
         modality_type = [4 for _ in utter]
         db_type = [0 for _ in utter]
-        utter = {'content': ['[SEP]']+utter+['[SEP]'], 'modality_signal': [0]+modality_type+[0], 'temporal_signal': [turn]+temporal_type+[turn], 'db_signal': [0]+db_type+[0]}
+        utter = {'content': ['[SEP]'] + utter + ['[SEP]'], 'modality_signal': [0] + modality_type + [0],
+                 'temporal_signal': [turn] + temporal_type + [turn], 'db_signal': [0] + db_type + [0]}
         return {'utter': utter, 'sql': sql}
 
     # 获取各类型最大长度，并生成分割标记好的序列化数据
@@ -607,10 +611,10 @@ class DataSetLoad():
             file.write('\n')
         file.close()
         plt.plot(xs, ys)
-        plt.xlabel(_type+'_length')
+        plt.xlabel(_type + '_length')
         plt.ylabel('num')
         plt.legend()
-        plt.savefig('data_output/'+_type+'.png')
+        plt.savefig('data_output/' + _type + '.png')
         # plt.show()
         plt.close('all')
 
@@ -629,7 +633,6 @@ if __name__ == '__main__':
     dataset = ATIS_DataSetLoad(opt)
     train_dataset = dataset.train
     valid_dataset = dataset.valid
-
 
 '''
 
@@ -700,8 +703,14 @@ db 0 无  1 table1 2 table2 3 table3 先不考虑sql
 
 
 :param position: -
-:param modality: 0 无， 1 table 2 column 3 keyword 4 自然语言
-:param temporal: 0 db， 第一轮：1 ，，，
-:param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
+:param modality: 0 [sep]/[pad]， 1 table 2 column 3 keyword 4 自然语言  perfect
+:param temporal: max_turn+1 db， 第一轮：1 ，，，   0 [pad]     db中的[sep]需要改成0吗
+:param db 0 [sep]/[pad]  1 table1 2 table2 3 table3 先不考虑sql    *设置成8错了 应该设置成表的最大个数  其他都是对的
 
+mask_signal perfect  1valid  0 pad/sep
+
+column4table  perfect  len=db len
+utter perfect
+sql1  内容完全正确 <class 'list'>: ['[SEP]', 'select', 'count', '(', 'department . departmentid', ')', 'group by', 'department . departmentid']  
+sql2  内容完全正确    加一点  设一个args.decoder_len  小于这个长度的在最后拼接上pad
 '''
