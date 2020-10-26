@@ -9,11 +9,15 @@ class DefaultConfig(object):
     use_max_length = True
     max_length = {
         'sql': 65,
-        'utter': 25,
+        'utter': 30,
         'db': 300,
-        'turn': 7
+        'turn': 6,
+        'table': 26,
+        'de_sql': 65,
+        'de_utter': 30
     }
     root = "../"
+    output_root = root + "dataset/data_output/"
     raw_train_filename = root + "dataset/sparc_data_removefrom/train.pkl"
     raw_validation_filename = root + "dataset/sparc_data_removefrom/dev.pkl"
     database_schema_filename = root + "dataset/sparc_data_removefrom/tables.json"
@@ -27,7 +31,6 @@ class DefaultConfig(object):
     anonymize = False
     anonymization_scoring = False
     use_snippets = False
-
 
 
 def parse(self, kwargs):

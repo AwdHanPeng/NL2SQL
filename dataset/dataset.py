@@ -1,6 +1,7 @@
 
 import json
 import pickle
+import os
 import re
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
@@ -10,8 +11,12 @@ from data_util import ATISDataset
 import torch
 
 
+# SEP的temp也改成0
+
+
 # 加mask 类似db <SEP>utter <SEP>sql sql<SEP> (sql：组合每个column) -1改成turn+1
 # 将数据改为全序列形式并添加<PAD>, 单个数据形式 [columns,u1,s1,u2,s2...u_m,s_m]，s_m为希望预测获得的sql
+
 # data:{
 # content, db_signal, temporal_signal, modality_signal, mask_signal,
 # column4table(column对应元素代表其table编号)
@@ -38,7 +43,8 @@ class DataLoad(Dataset):
         column4table = [0 for _ in range(self.max_length['db'])]
         # 附加信息：column对应元素代表其table位置
         column2table = [0 for _ in range(self.max_length['db'])]
-        index = 0
+        table_loc = -1
+        table_num = 0
         for index in range(len(database['tokens'])):
             if index + 1 >= self.max_length['db']:
                 while db_data[index] != '[SEP]':
@@ -49,20 +55,21 @@ class DataLoad(Dataset):
             db_data[index] = database['tokens'][index]
             db_db[index] = database['db_signal'][index]
             db_modality[index] = database['modality_signal'][index]
-            db_temporal[index] = self.max_length['turn'] + 1
+
             if db_data[index] != '[SEP]':
                 db_mask[index] = 1
+                db_temporal[index] = self.max_length['turn'] + 1
             column4table[index] = db_db[index]
-            table_loc = index
-            while table_loc >= 0 and (column4table[table_loc] == column4table[index] or db_data[table_loc] == '[SEP]'):
-                table_loc -= 1
+            if db_db[index] > table_num:
+                table_loc = index
+                table_num = db_db[index]
             if db_data[index] != '[SEP]':
-                while db_data[table_loc] == '[SEP]':
-                    table_loc += 1
                 column2table[index] = table_loc
             # db_temporal[index] = database['temporal_signal'][index]
-        # * 的db_signal也设置为最大轮数+1
-        db_db[1] = self.max_length['turn'] + 1
+
+        # * 的db_signal设置为最大表数+1
+        db_db[1] = self.max_length['table']+1
+
         # 按轮数将utter和sql加入序列
         data = []
         for turn in range(len(pair)):
@@ -108,9 +115,16 @@ class DataLoad(Dataset):
             core = {'content': turn_data, 'db_signal': turn_db, 'temporal_signal': turn_temporal,
                     'modality_signal': turn_modality, 'mask_signal': turn_mask}
             # 制作附加信息
+            sql0 = ['[PAD]' for _ in range(self.max_length['de_sql'])]
+            utter0 = ['[PAD]' for _ in range(self.max_length['de_utter'])]
             sql1 = pair[turn]['sql']['source']
-            sql2 = sql1[1:] + ['[SEP]']
+
+            sql2 = sql1[1:]+['[SEP]']
+            sql1 = [(sql1[i] if i < len(sql1) else sql0[i]) for i in range(self.max_length['de_sql'])]
+            sql2 = [(sql2[i] if i < len(sql2) else sql0[i]) for i in range(self.max_length['de_sql'])]
+
             utter = pair[turn]['utter']['utter']
+            utter = [(utter[i] if i < len(utter) else utter0[i]) for i in range(self.max_length['de_utter'])]
             core['column4table'] = column4table
             core['column2table'] = column2table
             core['utter'] = utter
@@ -127,10 +141,17 @@ class DataLoad(Dataset):
         return len(self.data)
 
 
+'''
+:param position: -
+:param modality: 0 无， 1 table 2 column 3 keyword 4 自然语言
+:param temporal: 0 db， 第一轮：1 ，，，
+:param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
+'''
 # 根据ATIS构建数据集
 class ATIS_DataSetLoad():
     def __init__(self, opt):
-        self.qika = 1
+        self.qika = 'qika'
+        self.opt = opt
         self.atis = ATISDataset(opt)
         self.train_ori = self.atis_leach(self.atis.train_data.examples)
         self.valid_ori = self.atis_leach(self.atis.valid_data.examples)
@@ -148,7 +169,6 @@ class ATIS_DataSetLoad():
 
     # 去除数据中的多余结构
     def atis_leach(self, dataset):
-        print(self.qika)
         dataset_leach = []
         for item in dataset:
             leach = {}
@@ -171,12 +191,6 @@ class ATIS_DataSetLoad():
 
     # 填充数据类型序列
     # 返回字典{'utter':{'content','modality', 'temporal', 'db'},'sql':{'content', 'words', 'modality', 'temporal', 'db'}}
-    '''
-    :param position: -
-    :param modality: 0 无， 1 table 2 column 3 keyword 4 自然语言
-    :param temporal: 0 db， 第一轮：1 ，，，
-    :param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
-    '''
 
     def get_pair_type(self, turn, sql, utter, schema):
         # 计算sql
@@ -274,12 +288,14 @@ class ATIS_DataSetLoad():
         max_legth['turn'] = 0
         max_legth['utter'] = 0
         max_legth['sql'] = 0
+        max_legth['table'] = 0
         # 统计长度分布
         legth = {}
         legth['db'] = []
         legth['turn'] = []
         legth['utter'] = []
         legth['sql'] = []
+        legth['table'] = []
         # 先找train最大长度
         for item in self.train_ori:
             turn = 0
@@ -295,8 +311,10 @@ class ATIS_DataSetLoad():
             # 对话轮外长度统计
             max_legth['db'] = max(max_legth['db'], len(item['split_database']['tokens']))
             max_legth['turn'] = max(max_legth['turn'], turn)
+            max_legth['table'] = max(max_legth['table'], len(item['schema'].table_schema['table_names']))
             legth['turn'].append(turn)
             legth['db'].append(len(item['split_database']['tokens']))
+            legth['table'].append(len(item['schema'].table_schema['table_names']))
 
         # 再找valid最大长度
         for item in self.valid_ori:
@@ -313,21 +331,28 @@ class ATIS_DataSetLoad():
             # 对话轮外长度统计
             max_legth['db'] = max(max_legth['db'], len(item['split_database']['tokens']))
             max_legth['turn'] = max(max_legth['turn'], turn)
+            max_legth['table'] = max(max_legth['table'], len(item['schema'].table_schema['table_names']))
             legth['turn'].append(turn)
             legth['db'].append(len(item['split_database']['tokens']))
-
-        self.plt_length(legth, 'turn')
-        self.plt_length(legth, 'sql')
-        self.plt_length(legth, 'utter')
-        self.plt_length(legth, 'db')
+            legth['table'].append(len(item['schema'].table_schema['table_names']))
+        self.plt_length(legth, self.opt.output_root, 'turn')
+        self.plt_length(legth, self.opt.output_root, 'sql')
+        self.plt_length(legth, self.opt.output_root, 'utter')
+        self.plt_length(legth, self.opt.output_root, 'db')
+        self.plt_length(legth, self.opt.output_root, 'table')
+        max_legth['de_sql'] = max_legth['sql']
+        max_legth['de_utter'] = max_legth['utter']
         return max_legth
 
     # 统计长度
-    def plt_length(self, legth, _type):
+    def plt_length(self, legth, root, _type):
         length = dict(Counter(legth[_type]))
         xs = list(sorted(length.keys(), reverse=False))
         ys = [length[i] for i in xs]
-        file = open(_type + '.txt', 'w')
+        path = root + _type + '.txt'
+        if os.path.exists(path):
+            os.remove(path)
+        file = open(path, 'w')
         sum = 0
         for fx, fy in zip(xs, ys):
             sum += fy
@@ -340,7 +365,9 @@ class ATIS_DataSetLoad():
         plt.xlabel(_type + '_length')
         plt.ylabel('num')
         plt.legend()
-        plt.savefig('data_output/' + _type + '.png')
+
+        plt.savefig(root + _type+'.png')
+
         # plt.show()
         plt.close('all')
 
@@ -353,6 +380,8 @@ class ATIS_DataSetLoad():
         # 更新数据
         self.train = DataLoad(self.max_length, self.train_ori)
         self.valid = DataLoad(self.max_length, self.valid_ori)
+
+
 
 
 # 构建数据集, 给定具体数据集，生成database，train，dev，各位置最大长度
@@ -629,10 +658,13 @@ class DataSetLoad():
         self.dev = DataLoad(self.max_length, self.dev_ori)
 
 
+
 if __name__ == '__main__':
     dataset = ATIS_DataSetLoad(opt)
     train_dataset = dataset.train
     valid_dataset = dataset.valid
+
+
 
 '''
 
@@ -669,48 +701,8 @@ __getitem__:
 
 ‘Utterance’:
 ['<SEP> What is the number of employees in each department ? <SEP> <PAD>...<PAD>','<SEP> Which department has the most employees ? Give me the department name . <SEP> <PAD>...<PAD>']
-<<<<<<<  utterance中每个句子的长度，如果小于args.ul padding到args.ul，如果大于args.ul那么就扔到最后的几个单词
-<<<<<<<  utterance的轮数我们不处理，原来有多少轮，这个list中就放多少轮
-
-'SQL':
-['<SEP> select count ( departmentid ) from department group by departmentid <EOS> <PAD>...<PAD> ',
-'<SEP> select name from department group by departmentid order by count ( departmentid ) desc limit value <EOS> <PAD>...<PAD> ']
-<<<<<<<  sql中每个句子的长度，如果小于args.sl就padding到args.sl，如果大于args.sl那么就扔到最后的几个单词
-<<<<<<<  sql的轮数我们不处理，原来有多少轮，这个list中就放多少轮
-
-'input': [
-concat
-] 
-<<<<<<<  将Table，Column，utterance1，sql1拼接起来 长度等于 tl+cl+ul+sl 的， 
-
-    
-
-=======
-'Modality':
-[[1]* tl +[2]*cl + [4]*len(utterance1) + sql1的组合}
-,}
-] <<<<<<<<<1表示table 2表示column 3表示utterance 4表示sql 0无
-
-'position':
-不需要，在模型forward中即可定义
-’temporal‘：
-不需要，在模型forward中即可定义
-
-’dbcomponent‘:
-db 0 无  1 table1 2 table2 3 table3 先不考虑sql
-} 
 
 
 
-:param position: -
-:param modality: 0 [sep]/[pad]， 1 table 2 column 3 keyword 4 自然语言  perfect
-:param temporal: max_turn+1 db， 第一轮：1 ，，，   0 [pad]     db中的[sep]需要改成0吗
-:param db 0 [sep]/[pad]  1 table1 2 table2 3 table3 先不考虑sql    *设置成8错了 应该设置成表的最大个数  其他都是对的
 
-mask_signal perfect  1valid  0 pad/sep
 
-column4table  perfect  len=db len
-utter perfect
-sql1  内容完全正确 <class 'list'>: ['[SEP]', 'select', 'count', '(', 'department . departmentid', ')', 'group by', 'department . departmentid']  
-sql2  内容完全正确    加一点  设一个args.decoder_len  小于这个长度的在最后拼接上pad
-'''
