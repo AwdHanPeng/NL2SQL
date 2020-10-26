@@ -9,12 +9,12 @@ class DefaultConfig(object):
     use_max_length = True
     max_length = {
         'sql': 65,
-        'utter': 25,
+        'utter': 30,
         'db': 300,
         'turn': 6,
         'table': 26,
         'de_sql': 65,
-        'de_utter': 25
+        'de_utter': 30
     }
     root = "F:/Github/NL2SQL/"
     output_root = root + "dataset/data_output/"
