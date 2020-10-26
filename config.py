@@ -13,6 +13,21 @@ class DefaultConfig(object):
         'db': 300,
         'turn': 7
     }
+    root = "F:/Github/NL2SQL/"
+    raw_train_filename = root + "dataset/sparc_data_removefrom/train.pkl"
+    raw_validation_filename = root + "dataset/sparc_data_removefrom/dev.pkl"
+    database_schema_filename = root + "dataset/sparc_data_removefrom/tables.json"
+    # embedding_filename ="/home/lily/rz268/dialog2sql/word_emb/glove.840B.300d.txt"
+    input_vocabulary_filename = 'input_vocabulary.pkl'
+    output_vocabulary_filename = 'output_vocabulary.pkl'
+    data_directory = "processed_data_sparc_removefrom"
+    input_key = "utterance"
+    processed_train_filename = 'train.pkl'
+    processed_validation_filename = 'validation.pkl'
+    anonymize = False
+    anonymization_scoring = False
+    use_snippets = False
+
 
 
 def parse(self, kwargs):
