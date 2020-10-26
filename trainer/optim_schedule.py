@@ -9,7 +9,7 @@ class ScheduledOptim():
         self._optimizer = optimizer
         self.n_warmup_steps = n_warmup_steps
         self.n_current_steps = 0
-        self.init_lr = np.power(d_model, -0.5)
+        self.init_lr = np.power(d_model, -0.5)  #
 
     def step_and_update_lr(self):
         "Step with the inner optimizer"
@@ -33,3 +33,11 @@ class ScheduledOptim():
 
         for param_group in self._optimizer.param_groups:
             param_group['lr'] = lr
+
+
+if __name__ == '__main__':
+    n_current_steps = 4000
+    n_warmup_steps = 4000
+    b = np.min([np.power(n_current_steps, -0.5), np.power(n_warmup_steps, -1.5) * n_current_steps]) * np.power(512,
+                                                                                                               -0.5)
+    print(b)

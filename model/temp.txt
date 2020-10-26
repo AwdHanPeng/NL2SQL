@@ -1,0 +1,31 @@
+tranform_layer： 将bert的维度进行降低 （必选）
+tranform_attention：将decoder rnn的state和utter rnn的state进行拼接，然后降维到hidden，用来对utter的表示进行attention （必选）
+tranform_fuse_lastutter：tranform_attention：将decoder rnn的state和utter rnn的state以及上一步utter sum进行拼接 （必选）
+用来从每个content中获取weight sum
+tranform_fuse_attention：将三路的weight sum进行融合 （必选）
+tranform_fuse_input_state：将utter rnn的状态集合的weight sum 和 sql embedding进行融合 随后输入到decoder rnn中 （可不选）令dim相等就可以了
+改进：decoder rnn 输入等于两倍的512  （utter rnn output=512 hidden=512）
+tranform_fuse_db_feature： 将多轮的db表示进行融合 获取初始化的db embedding （必选）4*512>512
+tranform_fuse_column_table: 将table和column的表示过一个双向gru 然后拼接双向 再降维 (可不选)
+tranform_decoder_output:将decoder的输出进行降为  然后和db 表示和keyword表示进行计算概率 (可不选) 将decoder rnn的输出设置维度和hidden一样
+tranform_lastutter_initutterrnn：取last utter hidden sum转变维度之后用来初始化utter rnn （可不选）将hidden和utter rnn的输出设置一样
+
+5个必选的nn
+768*512
+1024*512
+3*512->512
+3*512->512
+4*512>512
+
+utter gru 512->512
+decoder gru 1024->512
+column_table gru 512->512
+
+
+ffn 512*1024
+*6
+
+mulit head atten
+*6
+
+decoder embedding dim 512*len(dict)
