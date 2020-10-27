@@ -1,4 +1,3 @@
-
 import json
 import pickle
 import os
@@ -68,7 +67,7 @@ class DataLoad(Dataset):
             # db_temporal[index] = database['temporal_signal'][index]
 
         # * 的db_signal设置为最大表数+1
-        db_db[1] = self.max_length['table']+1
+        db_db[1] = self.max_length['table'] + 1
 
         # 按轮数将utter和sql加入序列
         data = []
@@ -119,7 +118,7 @@ class DataLoad(Dataset):
             utter0 = ['[PAD]' for _ in range(self.max_length['de_utter'])]
             sql1 = pair[turn]['sql']['source']
 
-            sql2 = sql1[1:]+['[SEP]']
+            sql2 = sql1[1:] + ['[SEP]']
             sql1 = [(sql1[i] if i < len(sql1) else sql0[i]) for i in range(self.max_length['de_sql'])]
             sql2 = [(sql2[i] if i < len(sql2) else sql0[i]) for i in range(self.max_length['de_sql'])]
 
@@ -147,6 +146,8 @@ class DataLoad(Dataset):
 :param temporal: 0 db， 第一轮：1 ，，，
 :param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
 '''
+
+
 # 根据ATIS构建数据集
 class ATIS_DataSetLoad():
     def __init__(self, opt):
@@ -364,9 +365,9 @@ class ATIS_DataSetLoad():
         plt.plot(xs, ys)
         plt.xlabel(_type + '_length')
         plt.ylabel('num')
-        plt.legend()
+        # plt.legend()
 
-        plt.savefig(root + _type+'.png')
+        plt.savefig(root + _type + '.png')
 
         # plt.show()
         plt.close('all')
@@ -380,8 +381,6 @@ class ATIS_DataSetLoad():
         # 更新数据
         self.train = DataLoad(self.max_length, self.train_ori)
         self.valid = DataLoad(self.max_length, self.valid_ori)
-
-
 
 
 # 构建数据集, 给定具体数据集，生成database，train，dev，各位置最大长度
@@ -642,7 +641,7 @@ class DataSetLoad():
         plt.plot(xs, ys)
         plt.xlabel(_type + '_length')
         plt.ylabel('num')
-        plt.legend()
+        # plt.legend()
         plt.savefig('data_output/' + _type + '.png')
         # plt.show()
         plt.close('all')
@@ -658,16 +657,34 @@ class DataSetLoad():
         self.dev = DataLoad(self.max_length, self.dev_ori)
 
 
-
 if __name__ == '__main__':
     dataset = ATIS_DataSetLoad(opt)
     train_dataset = dataset.train
     valid_dataset = dataset.valid
+    from transformers import BertModel, BertTokenizerFast, BertConfig
 
+    tokenizer = BertTokenizerFast.from_pretrained('bert-base-uncased')
+    from tqdm import tqdm
 
-
+    content_list = []
+    for data in train_dataset.data:
+        for item in data:
+            content = item['content']
+            content_list += content
+    for data in valid_dataset.data:
+        for item in data:
+            content = item['content']
+            content_list += content
+    word_set = set()
+    for str in tqdm(content_list):
+        enc = tokenizer([str], return_tensors='pt', add_special_tokens=False)
+        s = enc['input_ids'].shape[1]
+        if s != 1:
+            word_set.add(str)
+    print(word_set)
 '''
 
+q1:utter mask check 
 
 sample:
 {
@@ -701,8 +718,11 @@ __getitem__:
 
 ‘Utterance’:
 ['<SEP> What is the number of employees in each department ? <SEP> <PAD>...<PAD>','<SEP> Which department has the most employees ? Give me the department name . <SEP> <PAD>...<PAD>']
+'''
+'''
+
+{
+'', 'Turon', 'Weirich', 'Damianfort', 'coupon', 'Hafizabad', 'pos', 'Janessa', "'Knee", 'Party_Theme', 'kayaking', 'PetroChina', '1004', 'HOU', '00:33:18', 'assignedto', "'Regular", 'Solveig', "'AKO", 'campusfee', 'emp', '8.0', 'Blume', 'fewest', "'Billund", 'fastestlapspeed', 'address_id', 'Northridge', 'allergy', 'accelerators', 'supportrepid', 'enrollments', "'Ethiopia", 'cont', 'atb', 'logon', 'hoursperweek', 'employeeid', 'nagative', "'No", 'Robbin', 'on-hold', 'Mancini', 'assistingnurse', 'LG-P760', 'aut', 'headers', "'Full", 'MPG', 'gnp', 'chervil', "'Kolob", 'mid-field', 'derparting', 'log_entry_date', "'Hawaii", "'Initial", 'Parallax', 'Rathk', 'catalogs', 'stamina', 'ppos', 'AC/DC', '50000', 'TAMI', 'roomname', "'S", 'ratingdate', 'headquarter', 'Christop', 'inidividual', 'minoring', 'surnames', 'earns', '1.85', '120000', 'alphabetic', 'IDs', 'Maudie', 'percents', 'laptime', 'Dameon', 'ppv', 'broadcasted', 'fte', 'genreid', 'invoice', 'driverstandings', '02:59:21', 'Clauss', 'collectible', 'summed', 'stageposition', 'cred', 'fun1', '102.76', '2b', 'Homenick', 'alphabetical', 'albumid', 'makeid', 'countrycode', '160000', 'q1', 'Astrids', 'Tourist_ID', "'Vermont", 'abouve', "'Published", 'to-date', 'firstname', 'percentages', 'Kayaking', '3300', "'Arizona", 'APG', 'cheapest', "'Brig", 'Dinning', 'Zinfandel', 'dorms', "'Gottlieb", '12:00:00', 'enr', 'SWEAZ', 'Abasse', 'onscholarship', 'artistid', "'Participant", "'sed", 'sporabout', 'endowments', 'gk', 'parapraph', 'Graztevski', 'stuid', 'facid', "'sint", "'Heffington", "'Joint", 'authorder', 'Spitzer', 'browswers', "'Rainbow", 'GPAs', 'attendances', 'Brander', "'American", 'arrears', "'Paid", "'Meaghan", 'incur', 'Gatwick', 'Szymon', '15000', 'interchanges', 'unitprice', 'forename', "'Friendly", '57.5', 'contaSELECT', 'useracct', 'X3', 'Derricks', '20.0', 'Abdoulaye', 'Ernser', 'A340-300', 'retailing', 'mose', "'GT", 'mib', 'mp4', 'Feil', "'Armani", '70174', 'blockfloor', 'enrolment', 'Naegeli', 'donator', 'username', 'seq', "'Grondzeiler", "'King", 'non-Catholic', 'durations', "'Smithson", 'songid', 'MADLOCK', 'dno', "'Vincent", 'fullname', 'prescribes', '300000', 'Midshipman', 'Ananthapuri', 'hight', 'billing_state', 'wifi', 'petid', 'Mergenthaler', 'Badlands', 'Katsuhiro', 'appelations', 'hse', '140000', '2192', "'Wisconsin", "'omnis", 'transcripts', 'abbreviations', 'countryname', 'Bonao', 'Porczyk', 'longest-running', 'browsers', 'LORIA', 'mailing', 'NABOZNY', 'Americano', 'hrs', '4.6', 'product_ids', "'Amisulpride", 'Chiltern', "'Morocco", 'bookings', 'Latte', 'Lohaus', 'clubdesc', "'Lynne", "'Schmidt", 'he/she', 'Peeters', 'Lockmanfurt', '10000000', 'Thiago', "'Korea", 'distributer', 'occupancy', 'ycard', 'USPS', 'Julianaside', "'Treasury", 'Motta', 'eid', 'pcp', 'FJA', 'Deckow', 'donators', 'roomid', 'Andaman', "'Marriage", 'maxoccupancy', '900.0', '94002', '15,000', 'Rebeca', "'Cancelled", 'Friesen', '18:27:16', 'indepyear', 'isava', 'teh', 'Lamberton', 'amerindian', '571', 'personfriend', 'McGranger', 'Fedex', 'tryouts', 'tolls', 'Khanewal', "'Welcome", 'billing_city', 'nicknames', 'bluetooth', 'Metallica', 'CCTV', 'HSBC', 'sumbitted', 'catnip', 'artisits', '0.99', 'Miramichi', 'roomtype', 'Vietti', 'prerequisites', 'Painless', 'synthase', 'Mariusz', '23:51:54', 'gpa', '1989-09-03', 'oth', '3452', "'intern", 'R-22', 'titils', 'lastname', 'countrylanguage', "'Electoral", 'hometowns', 'PUR', 'authorize', 'Smithson', "n't", 'dphone', "'ee", 'Leonie', 'Fearsome', 'dictinct', 'MARROTTE', 'Giuliano', 'Carribean', '2003-04-19', 'circuitid', 'Heathrow', 'studnets', 'agility', 'Geovannyton', 'fld', 'Recluse', 'pertains', 'Teqnology', '2007-12-25', 'mades', '2002-06-21', 'appointmentid', 'constructorid', "'Deleted", 'openning', 'Fami', 'HBS', 'Meaghan', 'comptroller', 'employe', 'train_number', 'ay', "'Paper", 'Ryley', 'cname', 'emailstanley.monahan', 'Bushey', 'Alloway', 'Janess', "'Orbit", 'Vat', 'statments', 'lexicographic', "'s", 'procucts', 'Melching', 'expectancy', 'descriptrion', 'locaton', 'Jone', 'enrolling', 'refund', 'gname', 'Delete', 'hbp', '30000', 'canoeing', 'code2', '5200', "'love", 'partitionid', 'porphyria', '957', 'AKW', "'ALA", 'Brenden', 'edispl', 'goalies', '180cm', 'Kertzmann', "'Olympus", 'departures', "'Alabama", 'hh', 'appellation', 'role_description', 'SWEAZY', 'appelation', 'AirCon', 'University-Channel', 'Karson', 'showtimes', 'Siudym', 'donoator', 'party_events', 'flied', 'lname', "'senior", 'wineries', 'Aerosmith', 'Erdman', 'alphabetically', 'Duplex', 'Furman', '1121', 'Jandy', 'estimations', 'CHRISSY', 'tonnage', '1976-01-01', 'mf', 'train_name', 'eg', 'Gerhold', "'North", 'checkout', 'Ph.D.', 'chargeable', '242518965', "'AIK", 'Citys', 'hanyu', "'activator", 'playlist', 'flax', "'Lake", 'appellations', 'Gruber', 'Gehling', 'dribbling', 'Keeling', 'amenid', 'VIDEOTAPE', 'gradeconversion', '_attendance', 'MySakila', 'num', "'Donceel", 'hiredate', 'CIS-220', 'clublocation', 'Fosse', 'LON', 'McEwen', 'gradepoint', 'Exp', "'Kenyatta", 'constructors', 'Beege', 'yongest', 'isofficial', 'gameid', 'bandmate', 'SELBIG', '3.8', 'shools', '10018', 'contid', 'Wnat', 'prescribe', '1.84', "'Catering", '8000', '(millions)', 'birthdate', 'work_types', 'invoices', 'Ellsworth', 'airportname', "'West", 'cmi', "'2017-06-19", 'prescriptions', 'Ottilie', '3500', 'MasterCard', "'Provisional", 'Unbound', 'mins', 'Olin', 'citizenships', 'Cobham', 'mfu', '1000000', 'sleet', "'international", 'resname', 'Wihch', 'genders', 'gtype', "'Virginia", 'tweets', 'pitstops', 'powertrain', 'player-coach', 'receipt_date', 'pommel', 'shaff', 'desc', 'Tillman', 'TMobile', 'gradepoints', 'Kohler', 'prodcuts', 'raceid', '737-800', 'titleed', 'batters', 'Jaskolski', "'Lasta", 'url', 'pettype', 'BETTE', 'src', 'bedtype', '60000', 'first-grade', 'Sawayn', 'left-handed', '636', 'invoicedate', 'example.com', "'Kelly", 'f2000', 'visibilities', 'parites', 'departmentid', 'staystart', 'authorizing', "'Dr", 'maximim', 'detentions', 'Third-rate', "'t", 'rem', "'Unsatisfied", 'Paucek', "'Sponsor", 'fnol', 'from-date', 'cumin', 'Eadie', 'paragraphs', 'Rodrick', 'MTW', 'Fujitsu', 'TARRING', "'robe", 'Anguila', "'Baldwin", 'comptrollers', 'Lubowitz', 'highschooler', 'Gleasonmouth', 'Beatrix', "'Lupe", 'gymnasts', 'Bangla', "'International", 'EVELINA', 'allergytype', 'sportsinfo', 'Zalejski', 'dpi', 'divergence', 'accout', 'q2', 'expires', 'mpg', '6862', 'sqlite', 'playl', "'1989-04-24", 'ASY', 'Fahey', 'budgeted', 'Comp', "'SF", 'Akureyi', 'toal', 'Kamila', "'Boston", 'aircrafts', '37.4', "'HMS", 'wel', "'Aripiprazole", 'lived-in', 'GOLDFINGER', 'poeple', 'Ueno', 'Lyla', 'Taizhou', '8.5', 'TRACHSEL', 'Wyman', 'climber', 'service_id', 'pct', 'dob', 'constructor', 'address2', 'mediatype', 'service_details', 'goalie', 'vat', 'alid', '2010-01-01', 'MPEG', 'forenames', 'yn', "'Close", "'Sigma", 'descriptio', "'1989-03-16", 'Feest', 'Krystel', 'dateundergoes', 'headofstate', 'bandmates', 'food-related', 'appt', 'releasedate', 'q3', 'restypename', 'KAWA', '!=', 'seatings', 'student_id', 'Moulin', 'prereq', "'Miami", 'registrations', 'baseprice', 'minit', 'lifespans', 'low_temperature', '8741', 'dname', "'Noel", 'oncall', 'Aniyah', "'Summer", 'Dr.', 'Prity', '918', 'statment', '3b', 'Bootup', 'there？', 'mkou', 'cust', 'actid', 'Goldner', 'pid', 'Koby', 'eius', 'clubname', 'occurances', 'asessment', 'shp', 'KLR209', 'datetime', 'CProxy', 'Daan', 'schooler', 'manufacte', 'Sonoma', 'market-rate', 'coasters', 'CACHEbox', 'sponser', 'body_builder', 'PHL', 'surfacearea', "'inhibitor", 'winning-pilots', 'Knolls', '07:13:53', 'Ekstraklasa', '621', 'memberships', 'Acknowledgement', 'sourceairport', 'balances', 'asc', 'edu', 'Aruba', 'Triton', 'Waterbury', 'Gorgoroth', 'statuses', 'Abilene', 'Woodroffe', 'gamesplayed', 'Turcotte', "'GV", 'furniture_id', 'duplicates', 'Monadic', 'OK，give', "'activitor", 'milliseconds', "'Aberdare", 'payed', 'divison', 'example.org', "'Jessie", 'Toure', '09:00:00', 'templates', '1986-11-13', 'AHD', "'Auto", 'right-footed', "'Express", 'Atsushi', 'arears', 'descendingly', 'right-handed', 'suppler', 'lecturers', 'Feliciaberg', 'private/public', '13,000', 'party_event', 'Rylan', 'tutors', 'postalcode', 'PU_MAN', 'custmers', "'Tabatha", "'1986-08-26", '9000', 'customer_type_code', "'Yes", 'allergies', 'QM-261', 'Guruvayur', 'confer', "'Prof", 'highshcool', 'ssn', 'Elnaugh', 'MK_MAN', '4500', '100.0', 'instructs', 'idp', 'Adivisor', 'game1', 'airportcode', "'225", "'NY", 'distinctness', 'eliminations', 'Ohh', 'adresses', 'expectancies', '563', 'perpetrator？', 'csu', 'omim', 'Despero', 'left-footed', "'Vivian", 'filename', 'fourth-grade', '8000000', 'GELL', 'flightno', 'unreviewed', "'Glenn", 'URLs', 'buildup', 'ACCT-211', 'datatypes', 'lat', 'perpetrator', '100000', 'Payam', 'Wydra', 'ht', 'horsepowers', 'apid', "'Kaloyan", 'init', 'Z520e', '900000', 'Zieme', 'jobcode', '190cm', 'Kolob', 'staffs', '42000', 'PPT', 'Tokohu', 'primary_conference', 'CTO', 'Ebba', 'tryout', "'re", 'avg', 'ExxonMobil', 'Kuhn', 'custid', "'Government", '4560596484842', '1975-01-01', 'ibb', '80000', 'coupons', 'Cleavant', 'flno', 'zipcode', 'ihsaa', '4985.0', 'Oops', "'English", 'oxen', "'Miss", 'Harford', 'Bosco', 'hanzi', 'uid', 'bname', 'ALAMO', '18000', 'piad', '94107', 'dst', 'inst', 'problem_logs', 'checkin', 'birthdays', "'Denesik", 'reflexes', 'tweet', "'Graph", 'lifeexpectancy', 'enrico09', "'Cargo", 'catalog_publisher', "'Organizer", '20000', 'Heilo', 'Nameless', 'Gelderland', 'majoring', 'wrau', "'Homeland", 'fname', "'Order", 'rentals', "'Evalyn", 'OTHA', 'laptimes', "'Matter", 'A4', 'montly', 'freinds', 'Fasterfox', 'three-year', 'crs', 'highschoolers', 'login', 'wl', 'Jolie', 'D21', 'ONDERSMA', 'St.', '2016-03-15', '94103', 'objectnumber', 'governmentform', 'Langosh', "'Monaco", 'roomnumber', 'tot', "'Tony", "'Canadian", 'Birtle', 'Falls/Grand-Sault', 'undergraduates', 'ids', "'PPT", 'socre', 'maxium', 'voluptatem', 'multiracial', '20:49:27', "'UAL", 'Cyberella', "'Soisalon", 'deparments', 'manged', 'GT-I9300', 'Lysanne', '634', 'Heaney', '12000', 'Acua', '10000', 'SSN', 'Jeramie', 'AAC', 'ATO', "'Book", 'gmail.com', 'mascots', 'postcode', 'problem_log', 'mailshot', 'interacts', "'Protoporphyrinogen", "'Private", 'billing_country', '564', 'pname', 'GPA', 'schoolers', 'Amersham', 'HKG', 'climbers', "'Tax", 'yearid', "'Tournament", '4500000', "'Robel-Schulist", 'primaryaffiliation', 'Robel', '4000000', 'NEB', 'constructorstandings', 'destairport', 'CVO', "'CA", 'countryid', 'volleys', "'Hey", 'teachest', 'county_ID', 'Blackville', 'indepdent', 'semesters', 'tweeted', 'evaluations', 'X5', 'Dayana', "'BK", 'GNP', 'fax', 'Thesisin', '200000', "'Foot", 'Ohori', 'laargest', 'amenity', 'Goodrich', 'Eau', "'Marina", 'substring', 'Sydnie', 'Rosalind', '91.0', 'blockcode', "'working", 'Farida', 'Jetblue', 'renting', '``', '2009-01-01', 'dormid', "'Tropical", 'totalenrollment', 'market_rate', 'dlocation', 'Medhurst', 'mediatypeid', 'DRE', "'University", 'Kerluke', 'driverid', "'Moving", 'shareholding', 'lf', "'Toubkal", "'APG", 'prerequisite', "'AIB", 'JPMorgan', 'detial', 'Alyson', 'overpayments', "'Lettice", '841', 'Powierza', "'Moulin", '15:06:20', 'LEIA', 'Puzzling', 'eash', 'sportname', 'Generalize', 'tourney', 'payable', '93000', '2018-03-17', 'haing', 'mailed', 'mailshots', 'WY', 'Binders', 'entry_name', 'Shieber', 'playlists', 'MOYER', 'Kapitan', '5000000', '5600', 'abbrev'}
 
 
-
-
-
+'''
