@@ -52,7 +52,7 @@ class DefaultConfig(object):
         'de_sql': 65,
         'de_utter': 30
     }
-    root = "C:/NL2SQL"
+    root = "F:/NL2SQL"
     output_root = root + "dataset/data_output/"
     raw_train_filename = root + "dataset/sparc_data_removefrom/train.pkl"
     raw_validation_filename = root + "dataset/sparc_data_removefrom/dev.pkl"

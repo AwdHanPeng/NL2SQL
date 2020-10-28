@@ -9,13 +9,14 @@ from config import opt
 from data_util import ATISDataset
 import torch
 
-
-# SEP的temp也改成0
-
-
 # 加mask 类似db <SEP>utter <SEP>sql sql<SEP> (sql：组合每个column) -1改成turn+1
 # 将数据改为全序列形式并添加<PAD>, 单个数据形式 [columns,u1,s1,u2,s2...u_m,s_m]，s_m为希望预测获得的sql
-
+'''
+:param position: -
+:param modality: 0 无， 1 table 2 column 3 keyword 4 自然语言
+:param temporal: 0 db， 第一轮：1 ，，，
+:param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
+'''
 # data:{
 # content, db_signal, temporal_signal, modality_signal, mask_signal,
 # column4table(column对应元素代表其table编号)
@@ -140,14 +141,6 @@ class DataLoad(Dataset):
         return len(self.data)
 
 
-'''
-:param position: -
-:param modality: 0 无， 1 table 2 column 3 keyword 4 自然语言
-:param temporal: 0 db， 第一轮：1 ，，，
-:param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
-'''
-
-
 # 根据ATIS构建数据集
 class ATIS_DataSetLoad():
     def __init__(self, opt):
@@ -209,8 +202,16 @@ class ATIS_DataSetLoad():
                         table = item[:cut]
                         column = item[(cut + 1):]
                     cut += 1
-                table = re.split('[ _]', table)
-                column = re.split('[ _]', column)
+                table = re.split('[ _]', table.lower())
+                column_0 = re.split('[ _]', column.lower())
+                column = []
+                for item in column_0:
+                    if item == 'departmentid':
+                        column += ['department', 'id']
+                    elif item == 'appointmentid':
+                        column += ['appointment', 'id']
+                    else:
+                        column += [item]
                 # 给出source样式
                 split_word = ''
                 for word in table:
@@ -224,7 +225,7 @@ class ATIS_DataSetLoad():
                 modality += [1 for _ in table] + [3] + [2 for _ in column]
             # 当前词组是关键字
             else:
-                key = re.split('[ _]', item)
+                key = re.split('[ _]', item.lower())
                 split_word = ''
                 for word in key:
                     split_word += word + ' '
@@ -238,12 +239,22 @@ class ATIS_DataSetLoad():
                'temporal_signal': [0] + temporal + [0], 'db_signal': [0] + db + [0],
                'source': ['[SEP]'] + source, 'target': source + ['[SEP]']}
         # 计算utter
-        temporal = [turn for _ in utter]
-        modality = [4 for _ in utter]
-        db = [0 for _ in utter]
-        utter = {'content': ['[SEP]'] + utter + ['[SEP]'], 'modality_signal': [0] + modality + [0],
+        content = []
+        source = []
+        for item in utter:
+            words = re.split('[ _]', item.lower())
+            split_word = ''
+            for word in words:
+                split_word += word + ' '
+            split_word = split_word[:-1]
+            source.append(split_word)
+            content += words
+        temporal = [turn for _ in content]
+        modality = [4 for _ in content]
+        db = [0 for _ in content]
+        utter = {'content': ['[SEP]'] + content + ['[SEP]'], 'modality_signal': [0] + modality + [0],
                  'temporal_signal': [0] + temporal + [0], 'db_signal': [0] + db + [0],
-                 'utter': ['[SEP]'] + utter + ['[SEP]']}
+                 'utter': ['[SEP]'] + content + ['[SEP]']}
         return {'utter': utter, 'sql': sql}
 
     # 读取数据库并将每个数据库内表与列添加seq表示法，按[表1,[表1内的列],表2,[表2内的列],...]排列，
@@ -255,7 +266,7 @@ class ATIS_DataSetLoad():
         for column in table_schema['column_names']:
             if column[0] >= table_num:
                 # 加入当前一系列column对应的table
-                split_table = re.split('[ _]', table_schema['table_names'][table_num])
+                split_table = re.split('[ _]', table_schema['table_names'][table_num].lower())
                 table_num += 1
                 split_database['tokens'] += ['[SEP]']
                 split_database['tokens'] += split_table
@@ -266,7 +277,16 @@ class ATIS_DataSetLoad():
                 split_database['temporal_signal'] += [0]
                 split_database['temporal_signal'] += [-1 for i in split_table]
             # 处理column
-            split_column = re.split('[ _]', column[1])
+            # 拆分departmentid
+            split_column_0 = re.split('[ _]', column[1].lower())
+            split_column = []
+            for item in split_column_0:
+                if item == 'departmentid':
+                    split_column += ['department', 'id']
+                elif item == 'appointmentid':
+                    split_column += ['appointment', 'id']
+                else:
+                    split_column += [item]
             split_database['tokens'] += ['[SEP]']
             split_database['tokens'] += split_column
             split_database['db_signal'] += [0]
@@ -283,6 +303,8 @@ class ATIS_DataSetLoad():
         return split_database
 
     # 获取各类型最大长度
+    # 数据里还有有连字符、数字、大写字母
+
     def get_length(self):
         max_legth = {}
         max_legth['db'] = 0
