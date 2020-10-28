@@ -2,6 +2,7 @@ import json
 import pickle
 import os
 import re
+import wordninja
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 from collections import Counter
@@ -202,16 +203,21 @@ class ATIS_DataSetLoad():
                         table = item[:cut]
                         column = item[(cut + 1):]
                     cut += 1
-                table = re.split('[ _]', table.lower())
+                table_0 = re.split('[ _]', table.lower())
                 column_0 = re.split('[ _]', column.lower())
+                table = []
                 column = []
-                for item in column_0:
+                '''
                     if item == 'departmentid':
                         column += ['department', 'id']
                     elif item == 'appointmentid':
                         column += ['appointment', 'id']
                     else:
-                        column += [item]
+                '''
+                for item in column_0:
+                    column += wordninja.split(item)
+                for item in table_0:
+                    table += wordninja.split(item)
                 # 给出source样式
                 split_word = ''
                 for word in table:
@@ -246,9 +252,9 @@ class ATIS_DataSetLoad():
             split_word = ''
             for word in words:
                 split_word += word + ' '
+                content += wordninja.split(word)
             split_word = split_word[:-1]
             source.append(split_word)
-            content += words
         temporal = [turn for _ in content]
         modality = [4 for _ in content]
         db = [0 for _ in content]
@@ -281,12 +287,7 @@ class ATIS_DataSetLoad():
             split_column_0 = re.split('[ _]', column[1].lower())
             split_column = []
             for item in split_column_0:
-                if item == 'departmentid':
-                    split_column += ['department', 'id']
-                elif item == 'appointmentid':
-                    split_column += ['appointment', 'id']
-                else:
-                    split_column += [item]
+                split_column += wordninja.split(item)
             split_database['tokens'] += ['[SEP]']
             split_database['tokens'] += split_column
             split_database['db_signal'] += [0]
