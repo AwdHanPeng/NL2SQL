@@ -1,2 +1,1 @@
-from .dataset import DataLoad
-from .dataset import DataSetLoad
+from .dataset import ATIS_DataSetLoad

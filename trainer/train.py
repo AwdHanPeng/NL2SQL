@@ -11,9 +11,10 @@ import tqdm
 class Trainer:
 
     def __init__(self, model,
-                 train_dataloader: DataLoader, test_dataloader: DataLoader = None,
-                 lr: float = 1e-4, betas=(0.9, 0.999), weight_decay: float = 0.01, warmup_steps=10000,
-                 with_cuda: bool = True, cuda_devices=None, log_freq: int = 10):
+                 train_dataloader, test_dataloader, bert_fix,
+                 lr: float = 1e-3, bert_lr: float = 1e-5, betas=(0.9, 0.999), weight_decay: float = 0.01,
+                 warmup_steps=200,
+                 with_cuda: bool = True, cuda_devices=None, log_freq: int = 10, ):
         """
         :param  :   model which you want to train
         :param train_dataloader: train dataset data loader
@@ -34,7 +35,7 @@ class Trainer:
 
         # Distributed GPU training if CUDA can detect more than 1 GPU
         if with_cuda and torch.cuda.device_count() > 1:
-            print("Using %d GPUS for  " % torch.cuda.device_count())
+            print("Using %d GPUS for model" % torch.cuda.device_count())
             self.model = nn.DataParallel(self.model, device_ids=cuda_devices)
 
         # Setting the train and test data loader
@@ -42,17 +43,37 @@ class Trainer:
         self.test_data = test_dataloader
 
         # Setting the Adam optimizer with hyper-param
-        self.optim = Adam(self.model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
+        self.params, self.params_bert = [], []
+        for name, param in self.model.named_parameters():
+            if param.requires_grad:
+                if 'model_bert' in name:
+                    self.params_bert.append(param)
+                else:
+                    self.params.append(param)
+        self.optim = Adam(self.params, lr=lr, betas=betas, weight_decay=weight_decay)
+
+        self.bert_optim = Adam(self.params_bert, lr=bert_lr, betas=betas,
+                               weight_decay=weight_decay) if not bert_fix else None
+
         self.optim_schedule = ScheduledOptim(self.optim, self.model.hidden, n_warmup_steps=warmup_steps)
 
         # Using Negative Log Likelihood Loss function for predicting the masked_token
         self.criterion = nn.NLLLoss(ignore_index=0)  # idx 0 not have a loss
 
         self.log_freq = log_freq
+        self.best_valid_acc = float('-inf')
+        self.best_epoch = 0
 
-        print("Total Parameters:", sum([p.nelement() for p in self.model.parameters()]))
+        print('=====================Parameters in Optimizer==============')
+        for param_group in self.model.optim.param_groups:
+            print(param_group.keys())
+            for param in param_group['params']:
+                print(param.size())
+
+        print("Total Parameters: {}*1e6", sum([p.nelement() for p in self.params]) // 1e6)
 
     def train(self, epoch):
+
         self.iteration(epoch, self.train_data)
 
     def test(self, epoch):
@@ -67,7 +88,7 @@ class Trainer:
         :param epoch: current epoch index
         :param data_loader: torch.utils.data.DataLoader for iteration
         :param train: boolean value of is train or test
-        :return: None
+        :return: step average acc
         """
         str_code = "train" if train else "test"
 
@@ -82,46 +103,43 @@ class Trainer:
         total_element = 0
 
         for i, data in data_iter:
-            # 0. batch_data will be sent into the device(GPU or cpu)
-            # data = {key: value.to(self.device) for key, value in data.items()}
 
             # 1. forward the input and all position labels
             generated_sql = self.model(data)
 
-            # NLL(negative log likelihood) loss of generated sql
-            generate_loss = self.criterion(generated_sql, data["gold sql"])
-            # FIXME:计算loss相关都需要再解决一下
+            loss_pack = self.criterion(generated_sql, data["gold sql"])
 
-            loss = generate_loss
+            loss, total_step, valid_step, correct_step = loss_pack['loss'], loss_pack['total_step'], loss_pack[
+                'valid_step'], loss_pack['correct_step']
 
             # 3. backward and optimization only in train
             if train:
                 self.optim_schedule.zero_grad()
+                if self.bert_optim: self.bert_optim.zero_grad()
                 loss.backward()
                 self.optim_schedule.step_and_update_lr()
+                if self.bert_optim: self.bert_optim.step()
 
-            # next sentence prediction accuracy
-            # FIXME：等数据feed成功后再考虑修复
-            correct = generate_loss.argmax(dim=-1).eq(data["gold sql"]).sum().item()
             avg_loss += loss.item()
-            total_correct += correct
-            total_element += data["gold sql"].nelement()
+            total_correct += correct_step
+            total_element += valid_step
 
             post_fix = {
                 "epoch": epoch,
                 "iter": i,
                 "avg_loss": avg_loss / (i + 1),
-                "teacher_force_acc": total_correct / total_element * 100,
+                "step_acc": total_correct / total_element * 100,
                 "loss": loss.item()
             }
 
             if i % self.log_freq == 0:
                 data_iter.write(str(post_fix))
 
-        print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len(data_iter), "total_teacher_force_acc=",
+        print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len(data_iter), "step_acc=",
               total_correct * 100.0 / total_element)
+        return total_correct / total_element
 
-    def save(self, epoch, file_path="output/ _trained.model"):
+    def save(self, epoch, step_acc, file_path):
         """
         Saving the current  model on file_path
 
@@ -129,10 +147,21 @@ class Trainer:
         :param file_path: model output path which gonna be file_path+"ep%d" % epoch
         :return: final_output_path
         """
-        # TODO:计算测试集合的准确率以实现有选择的存储
         # TODO：目前只实现了teacher force的acc计算过程 迭代式尚未实现
-        output_path = file_path + ".ep%d" % epoch
-        torch.save(self.model.cpu(), output_path)
-        self.model.to(self.device)
-        print("EP:%d Model Saved on:" % epoch, output_path)
-        return output_path
+        if step_acc >= self.best_valid_acc:
+            self.best_valid_acc = step_acc
+            self.best_epoch = epoch
+            output_path = file_path + ".ep%d.pth" % epoch
+            torch.save(self.model.state_dict(), output_path)
+            self.model.to(self.device)
+            print("EP:%d Model Saved on:" % epoch, output_path)
+            print("Current Valid Acc is {} in {} epoch" % step_acc, epoch)
+            return output_path
+        else:
+            print("EP:%d Model NO Save" % epoch)
+            print("Best Valid Acc is {} in {} epoch" % self.best_valid_acc, self.best_epoch)
+            print("Current Valid Acc is {} in {} epoch" % step_acc, epoch)
+
+    def load(self, epoch, file_path):
+        output_path = file_path + ".ep%d.pth" % epoch
+        self.model.load_state_dict(torch.load(output_path))
