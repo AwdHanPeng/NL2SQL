@@ -9,13 +9,14 @@ from config import opt
 from data_util import ATISDataset
 import torch
 
-
-# SEP的temp也改成0
-
-
 # 加mask 类似db <SEP>utter <SEP>sql sql<SEP> (sql：组合每个column) -1改成turn+1
 # 将数据改为全序列形式并添加<PAD>, 单个数据形式 [columns,u1,s1,u2,s2...u_m,s_m]，s_m为希望预测获得的sql
-
+'''
+:param position: -
+:param modality: 0 无， 1 table 2 column 3 keyword 4 自然语言
+:param temporal: 0 db， 第一轮：1 ，，，
+:param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
+'''
 # data:{
 # content, db_signal, temporal_signal, modality_signal, mask_signal,
 # column4table(column对应元素代表其table编号)
@@ -140,14 +141,6 @@ class DataLoad(Dataset):
         return len(self.data)
 
 
-'''
-:param position: -
-:param modality: 0 无， 1 table 2 column 3 keyword 4 自然语言
-:param temporal: 0 db， 第一轮：1 ，，，
-:param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
-'''
-
-
 # 根据ATIS构建数据集
 class ATIS_DataSetLoad():
     def __init__(self, opt):
@@ -215,6 +208,8 @@ class ATIS_DataSetLoad():
                 for item in column_0:
                     if item == 'departmentid':
                         column += ['department', 'id']
+                    elif item == 'appointmentid':
+                        column += ['appointment', 'id']
                     else:
                         column += [item]
                 # 给出source样式
@@ -288,6 +283,8 @@ class ATIS_DataSetLoad():
             for item in split_column_0:
                 if item == 'departmentid':
                     split_column += ['department', 'id']
+                elif item == 'appointmentid':
+                    split_column += ['appointment', 'id']
                 else:
                     split_column += [item]
             split_database['tokens'] += ['[SEP]']
