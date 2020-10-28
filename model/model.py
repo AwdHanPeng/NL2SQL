@@ -24,6 +24,9 @@ class Model(nn.Module):
         self.decoder_rnn_input_size = args.decodernn_input
         self.decoder_rnn_output_size = args.decodernn_output
 
+        self.cuda_condition = torch.cuda.is_available() and args.with_cuda
+        self.device = torch.device("cuda" if self.cuda_condition else "cpu")
+
         # embedding for BERT, sum of several embeddings
         self.input_embedding, self.output_keyword_embedding = InputEmbedding(args), OutputEmbedding(args)
 
@@ -74,21 +77,22 @@ class Model(nn.Module):
         batch_utter_embedding # turns,utter_len,hidden
         '''
 
-        batch_content = [(' ').join(item['content']).strip() for item in data]
+        batch_content = [item['content'] for item in data]
         batch_content_embedding = self.input_embedding.parse_batch_content(batch_content,
                                                                            'content')  # turns,total_len,hidden
         batch_temporal_embedding, batch_modality_embedding, batch_db_embedding = map(
             lambda type: self.input_embedding.parse_signal(
-                torch.tensor([item[type] for item in data]), type), ['temporal_signal', 'modality_signal', 'db_signal'])
+                torch.tensor([item[type] for item in data]).to(self.device), type),
+            ['temporal_signal', 'modality_signal', 'db_signal'])
         batch_positional_embedding = self.input_embedding.parse_signal(batch_content_embedding, 'position_signal')
         batch_embedding = batch_content_embedding + batch_temporal_embedding + batch_modality_embedding + batch_db_embedding + batch_positional_embedding
 
-        batch_utterance = [(' ').join(item['utter']).strip() for item in data]
+        batch_utterance = [item['utter'] for item in data]
         batch_utterance_embedding = self.input_embedding.parse_batch_content(batch_utterance,
                                                                              'utterance')  # turns,utter_len,hidden
         assert batch_utterance_embedding.shape[1] == self.utter_len
         batch_utter_temporal_embedding, batch_utter_modality_embedding, batch_utter_db_embedding = map(
-            lambda signal, type: self.input_embedding.parse_signal(torch.tensor(signal), type),
+            lambda signal, type: self.input_embedding.parse_signal(torch.tensor(signal).to(self.device), type),
             [[[i + 1] * self.utter_len for i in range(len(data))], [[4] * self.utter_len for i in range(len(data))],
              [[0] * self.utter_len for i in range(len(data))]], ['temporal_signal', 'modality_signal', 'db_signal'])
 
@@ -118,8 +122,11 @@ class Model(nn.Module):
             valid_content_mask = turn_mask[left:right + 1, :]
             if valid_feature.shape[0] < self.max_turn:
                 zero_teature = torch.zeros(
-                    [self.max_turn - valid_feature.shape[0], valid_feature.shape[1], valid_feature.shape[2]])
-                zero_mask = torch.zeros([self.max_turn - valid_content_mask.shape[0], valid_content_mask.shape[1]])
+                    [self.max_turn - valid_feature.shape[0], valid_feature.shape[1], valid_feature.shape[2]]).type_as(
+                    valid_feature).to(self.device)
+                zero_mask = torch.zeros(
+                    [self.max_turn - valid_content_mask.shape[0], valid_content_mask.shape[1]]).type_as(
+                    valid_content_mask).to(self.device)
                 turn_batch_feature.append(torch.cat((zero_teature, valid_feature), dim=0))
                 turn_batch_content_mask.append(torch.cat((zero_mask, valid_content_mask), dim=0))
                 turn_batch_mask.append(torch.tensor([0] * len(zero_teature) + [1] * len(valid_feature)))
@@ -137,7 +144,7 @@ class Model(nn.Module):
         assert len(turn_batch_mask) == len(turn_batch_feature) == len(turn_batch_content_mask)
         turn_batch_feature = torch.stack(turn_batch_feature, dim=0)
         assert turn_batch_feature.shape == (turn_num - 1, self.max_turn, self.total_len, self.hidden)
-        turn_batch_mask = torch.stack(turn_batch_mask, dim=0)
+        turn_batch_mask = torch.stack(turn_batch_mask, dim=0).to(self.device)
         assert turn_batch_mask.shape == (turn_num - 1, self.max_turn)
         turn_batch_content_mask = torch.stack(turn_batch_content_mask, dim=0)
         assert turn_batch_content_mask.shape == (turn_num - 1, self.max_turn, self.total_len)
@@ -265,7 +272,7 @@ class Model(nn.Module):
         :param data:
         :return:
         '''
-        turn_mask = torch.tensor([item['mask_signal'] for item in data])  # turns,total_len
+        turn_mask = torch.tensor([item['mask_signal'] for item in data]).to(self.device)  # turns,total_len
 
         turn_encoder_feature = self.transformer_encoder(self.tranform_layer(turn_embedding.permute(1, 0, 2)),
                                                         src_key_padding_mask=(turn_mask == 0)).permute(1, 0, 2)
@@ -345,6 +352,8 @@ class Model(nn.Module):
                     current_table_id = id
                     idxs.append(idx)
                 idx += 1
+            embedding_matrix.append(star_column)
+            dict_list.append(' . *')
             assert len(embedding_matrix) == len(dict_list)
             return embedding_matrix, dict_list
 
@@ -357,6 +366,7 @@ class Model(nn.Module):
         column4table, content = column4table[3:], content[3:]  # remove [sep] * [sep]
         embedding_matrix, dict_list = get_embedding_strdict(column4table, content)  # [(turn-1,hidden)*real_len]
         embedding_matrix = torch.stack(embedding_matrix, dim=1)  # (turn-1,db_units_num,hidden)
+
         return embedding_matrix, dict_list
 
     def lookup_from_dbembedding(self, db_embedding_matrix, db_dict_list, source_sql):
@@ -428,7 +438,7 @@ class Model(nn.Module):
             assert len(sole_sql) == sole_sql_dist.shape[0]
             for item, item_dist in zip(sole_sql, sole_sql_dist):
                 total_step += 1
-                if item is '[PAD]':
+                if item == '[PAD]':
                     continue
                 valid_step += 1
                 idx = find_item_idx(item)
@@ -463,7 +473,7 @@ class Model(nn.Module):
 
         # split original content turn sequence into mulit session samples
         # (turn-1,max_turn,len,hidden)
-        turn_mask = torch.tensor([item['mask_signal'] for item in data])
+        turn_mask = torch.tensor([item['mask_signal'] for item in data]).to(self.device)
         turn_batch_feature, turn_batch_mask, turn_batch_content_mask = self.create_turn_batch(turn_encoder_feature,
                                                                                               turn_mask)
 
@@ -478,7 +488,7 @@ class Model(nn.Module):
 
         # lookup from column4table and build db embedding and dict from turn_batch_db_fuse_feature
         db_embedding_matrix, db_dict_list = self.built_output_dbembedding(turn_batch_db_fuse_feature, data)
-
+        print(db_dict_list)
         # get source sql and target sql text sequence
         source_sql, target_sql = [item['sql1'] for item in data][1:], [item['sql2'] for item in data][1:]
 

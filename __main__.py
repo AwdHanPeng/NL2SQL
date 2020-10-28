@@ -4,6 +4,9 @@ from torch.utils.data import DataLoader
 from dataset import ATIS_DataSetLoad as DataSetLoad
 from model import Model
 from trainer import Trainer
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 
 class DataSetConfig(object):
@@ -113,6 +116,7 @@ def train():
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="adam first beta value")
 
     args = parser.parse_args()
+
     print("Loading {} Dataset".format(args.dataset))
     dataset_opt = DataSetConfig(args)
     dataset = DataSetLoad(dataset_opt)
@@ -125,6 +129,7 @@ def train():
     print("Building NL2SQL model")
     model = Model(args)
 
+    # download bert
     print("Creating BERT Trainer")
     trainer = Trainer(model, train_dataloader=train_data_loader.data, test_dataloader=test_data_loader.data, args=args)
 

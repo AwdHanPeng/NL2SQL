@@ -7,11 +7,13 @@ from .type_embedding import PositionalEmbedding, TemporalEmbedding, ModalityEmbe
 class PreTrainBert(nn.Module):
     def __init__(self, args):
         super().__init__()
-        from transformers import BertModel, BertTokenizer, BertConfig
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
-        self.bert_vocab = BertTokenizer.from_pretrained('bert-base-uncased').get_vocab()
+        from transformers import BertModel, BertTokenizer
+        self.bert = BertModel.from_pretrained('bert-base-uncased', cache_dir='./bert')
+        self.bert_vocab = BertTokenizer.from_pretrained('bert-base-uncased', cache_dir='./bert').get_vocab()
         self.unk_idx = self.bert_vocab.get('[UNK]')
         self.pad_idx = self.bert_vocab.get('[PAD]')
+        self.cuda_condition = torch.cuda.is_available() and args.with_cuda
+        self.device = torch.device("cuda" if self.cuda_condition else "cpu")
         if args.save_bert_vocab:
             with open('./bert_vocab.txt', 'w', encoding='UTF-8') as f:
                 for key, value in self.bert_vocab.items():
@@ -27,8 +29,8 @@ class PreTrainBert(nn.Module):
         data_tokens = []
 
         for item in data:
-            data_tokens.append([self.bert_vocab.get(s, self.unk_idx) for s in item.split()])
-        data_tokens = torch.tensor(data_tokens)
+            data_tokens.append([self.bert_vocab.get(s, self.unk_idx) for s in item])
+        data_tokens = torch.tensor(data_tokens).to(self.device)
 
         output = self.bert(input_ids=data_tokens, attention_mask=(
                 data_tokens != self.pad_idx).float())  # self.batch_size, self.total_len, -1)
@@ -44,6 +46,8 @@ class InputEmbedding(nn.Module):
         self.utter_len = args.utter_len
         self.turn_num = args.turn_num
         self.max_table = args.max_table
+        self.cuda_condition = torch.cuda.is_available() and args.with_cuda
+        self.device = torch.device("cuda" if self.cuda_condition else "cpu")
         self.position_embedding = PositionalEmbedding(d_model=self.input_size, total_len=self.total_len)
 
         self.temporal_embedding = TemporalEmbedding(max_turn=self.turn_num, embed_size=self.input_size)
@@ -56,7 +60,7 @@ class InputEmbedding(nn.Module):
 
     def parse_batch_content(self, batch_content, type):
         '''
-        :param batch_content: [str1,str2]
+        :param batch_content: [[,,,]],[,,,]]]
         :return: bs,total,hidden
         '''
         batch_size = len(batch_content)
@@ -83,6 +87,7 @@ class InputEmbedding(nn.Module):
         return content_embedding
 
     def parse_signal(self, signal, type):
+        signal = signal.to(self.device)
         if type == 'temporal_signal':
             return self.temporal_embedding(signal)
         elif type == 'modality_signal':
@@ -117,6 +122,8 @@ class OutputEmbedding(nn.Module):
 
         self.embedding = nn.Embedding(num_embeddings=len(self.dict), embedding_dim=args.hidden, padding_idx=0)
         self.transform_keyword_dist = nn.Linear(args.hidden, len(self.dict))
+        self.cuda_condition = torch.cuda.is_available() and args.with_cuda
+        self.device = torch.device("cuda" if self.cuda_condition else "cpu")
 
     def convert_str_to_embedding(self, item):
         '''
@@ -125,7 +132,7 @@ class OutputEmbedding(nn.Module):
         :return:
         '''
         if item in self.dict:
-            return self.embedding(torch.tensor(self.dict.index(item))).squeeze()
+            return self.embedding(torch.tensor(self.dict.index(item)).to(self.device)).squeeze()
         else:
             raise Exception('This token {} is not in output embedding dict!'.format(item))
 
