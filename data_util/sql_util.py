@@ -75,7 +75,7 @@ def token_list_to_seq(token_list):
 
     return seq
 
-# TODO: clean this up
+
 # find_subtrees
 # Finds subtrees for a subsequence of SQL.
 #
@@ -349,7 +349,7 @@ def add_snippets_to_query(snippets, ignored_entities, query, prob_align=1.):
         ignore = False
         snippet_seq = snippet.sequence
 
-        # TODO: continue here
+
         # If it contains an ignored entity, then don't use it.
         for entity in ignored_entities:
             ignore = ignore or util.subsequence(entity, snippet_seq)

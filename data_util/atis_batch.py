@@ -1,4 +1,4 @@
-# TODO: review this entire file and make it much simpler. 
+
 
 import copy
 from . import snippets as snip
