@@ -22,16 +22,15 @@ class Trainer:
         :param with_cuda: traning with cuda
         :param log_freq: logging frequency of the batch iteration
         """
-        with_cuda = args.with_cuda
-        cuda_devices = args.cuda_devices
+
         self.log_freq = args.log_freq
         weight_decay = args.adam_weight_decay
-        cuda_condition = torch.cuda.is_available() and with_cuda
-        self.device = torch.device("cuda:0" if cuda_condition else "cpu")
+        cuda_condition = torch.cuda.is_available() and args.with_cuda
+        self.device = torch.device("cuda" if cuda_condition else "cpu")
         self.model = model.to(self.device)
-        if with_cuda and torch.cuda.device_count() > 1:
+        if args.with_cuda and torch.cuda.device_count() > 1:
             print("Using %d GPUS for model" % torch.cuda.device_count())
-            self.model = nn.DataParallel(self.model, device_ids=cuda_devices)
+            self.model = nn.DataParallel(self.model, device_ids=args.cuda_devices)
         self.train_data = train_dataloader
         self.test_data = test_dataloader
         self.params, self.params_name, self.params_bert, self.params_bert_name = [], [], [], []
@@ -117,7 +116,8 @@ class Trainer:
                 "iter": i,
                 "avg_loss": avg_loss / (i + 1),
                 "step_acc": total_correct / total_element * 100,
-                "loss": loss.item()
+                "loss": loss.item(),
+
             }
 
             if i % self.log_freq == 0:

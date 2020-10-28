@@ -65,7 +65,7 @@ class Snippet():
         self.startpos = startpos
         self.sql = sql
 
-        # TODO: age vs. index?
+
         self.age = age
         self.index = 0
 
