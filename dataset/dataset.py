@@ -186,12 +186,16 @@ class ATIS_DataSetLoad():
 
     # 填充数据类型序列
     # 返回字典{'utter':{'content','modality', 'temporal', 'db'},'sql':{'content', 'words', 'modality', 'temporal', 'db'}}
-
     def get_pair_type(self, turn, sql, utter, schema):
         # 计算sql
         content = []
         source = []
         modality = []
+        # 将original形式的sql中db内容替换成符合自然语法的形式
+        columns_ori = schema.table_schema['column_names_original']
+        columns = schema.table_schema['column_names']
+        tables_ori = schema.table_schema['table_names_original']
+        tables = schema.table_schema['table_names']
         for item in sql:
             # 当前词组出现在db中，表示为一个column词组，content需将其拆开为单词
             if item in schema.column_names_surface_form:
@@ -203,17 +207,21 @@ class ATIS_DataSetLoad():
                         table = item[:cut]
                         column = item[(cut + 1):]
                     cut += 1
+                table = table.lower()
+                column = column.lower()
+                # 将original的替换成新的
+                for index in range(len(tables_ori)):
+                    if tables_ori[index].lower() == table and tables[index].lower() != table:
+                        table = tables[index].lower()
+                        break
+                for index in range(len(columns_ori)):
+                    if columns_ori[index][1].lower() == column and columns[index][1].lower() != column:
+                        column = columns[index][1].lower()
+                        break
                 table_0 = re.split('[ _]', table.lower())
                 column_0 = re.split('[ _]', column.lower())
                 table = []
                 column = []
-                '''
-                    if item == 'departmentid':
-                        column += ['department', 'id']
-                    elif item == 'appointmentid':
-                        column += ['appointment', 'id']
-                    else:
-                '''
                 for item in column_0:
                     column += wordninja.split(item)
                 for item in table_0:
@@ -385,15 +393,15 @@ class ATIS_DataSetLoad():
             file.write(str(fy))
             file.write('\n')
         file.close()
-        plt.plot(xs, ys)
-        plt.xlabel(_type + '_length')
-        plt.ylabel('num')
+        # plt.plot(xs, ys)
+        # plt.xlabel(_type + '_length')
+        # plt.ylabel('num')
         # plt.legend()
 
-        plt.savefig(root + _type + '.png')
+        # plt.savefig(root + _type + '.png')
 
         # plt.show()
-        plt.close('all')
+        # plt.close('all')
 
     # 修改最大长度
     def re_length(self, legth):
