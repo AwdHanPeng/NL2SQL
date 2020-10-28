@@ -11,10 +11,7 @@ import tqdm
 class Trainer:
 
     def __init__(self, model,
-                 train_dataloader, test_dataloader, bert_fix,
-                 lr: float = 1e-3, bert_lr: float = 1e-5, betas=(0.9, 0.999), weight_decay: float = 0.01,
-                 warmup_steps=200,
-                 with_cuda: bool = True, cuda_devices=None, log_freq: int = 10, ):
+                 train_dataloader, test_dataloader, args, ):
         """
         :param  :   model which you want to train
         :param train_dataloader: train dataset data loader
@@ -25,52 +22,45 @@ class Trainer:
         :param with_cuda: traning with cuda
         :param log_freq: logging frequency of the batch iteration
         """
-
-        # Setup cuda device for   training, argument -c, --cuda should be true
+        with_cuda = args.with_cuda
+        cuda_devices = args.cuda_devices
+        self.log_freq = args.log_freq
+        weight_decay = args.adam_weight_decay
         cuda_condition = torch.cuda.is_available() and with_cuda
         self.device = torch.device("cuda:0" if cuda_condition else "cpu")
-
-        # This model will be saved every epoch
         self.model = model.to(self.device)
-
-        # Distributed GPU training if CUDA can detect more than 1 GPU
         if with_cuda and torch.cuda.device_count() > 1:
             print("Using %d GPUS for model" % torch.cuda.device_count())
             self.model = nn.DataParallel(self.model, device_ids=cuda_devices)
-
-        # Setting the train and test data loader
         self.train_data = train_dataloader
         self.test_data = test_dataloader
-
-        # Setting the Adam optimizer with hyper-param
-        self.params, self.params_bert = [], []
+        self.params, self.params_name, self.params_bert, self.params_bert_name = [], [], [], []
         for name, param in self.model.named_parameters():
             if param.requires_grad:
-                if 'model_bert' in name:
+                if 'bert' in name:
                     self.params_bert.append(param)
+                    self.params_bert_name.append(name)
                 else:
                     self.params.append(param)
-        self.optim = Adam(self.params, lr=lr, betas=betas, weight_decay=weight_decay)
+                    self.params_name.append(name)
+        betas = (args.adam_beta1, args.adam_beta2)
+        self.optim = Adam(self.params, lr=args.lr, betas=betas, weight_decay=weight_decay)
+        self.bert_optim = Adam(self.params_bert, lr=args.lr_bert, betas=betas,
+                               weight_decay=weight_decay) if (args.use_bert and not args.fix_bert) else None
 
-        self.bert_optim = Adam(self.params_bert, lr=bert_lr, betas=betas,
-                               weight_decay=weight_decay) if not bert_fix else None
+        self.optim_schedule = ScheduledOptim(self.optim, self.model.hidden, n_warmup_steps=args.warmup_steps)
 
-        self.optim_schedule = ScheduledOptim(self.optim, self.model.hidden, n_warmup_steps=warmup_steps)
-
-        # Using Negative Log Likelihood Loss function for predicting the masked_token
-        self.criterion = nn.NLLLoss(ignore_index=0)  # idx 0 not have a loss
-
-        self.log_freq = log_freq
         self.best_valid_acc = float('-inf')
         self.best_epoch = 0
 
-        print('=====================Parameters in Optimizer==============')
-        for param_group in self.model.optim.param_groups:
-            print(param_group.keys())
-            for param in param_group['params']:
-                print(param.size())
-
-        print("Total Parameters: {}*1e6", sum([p.nelement() for p in self.params]) // 1e6)
+        print('=====================Module in Optimizer==============')
+        for name, param in zip(self.params_name, self.params):
+            print('Module {}: {}*1e3'.format(name, sum([p.nelement() for p in param]) // 1e3))
+        print('=====================Module in Bert==============')
+        for name, param in zip(self.params_bert_name, self.params_bert):
+            print('Module {}: {}*1e3'.format(name, sum([p.nelement() for p in param]) // 1e3))
+        print("Total Parameters: {}*1e6".format(sum([p.nelement() for p in self.params]) // 1e6))
+        print("Total Bert Parameters: {}*1e6".format(sum([p.nelement() for p in self.params_bert]) // 1e6))
 
     def train(self, epoch):
 
@@ -105,9 +95,7 @@ class Trainer:
         for i, data in data_iter:
 
             # 1. forward the input and all position labels
-            generated_sql = self.model(data)
-
-            loss_pack = self.criterion(generated_sql, data["gold sql"])
+            loss_pack = self.model(data)
 
             loss, total_step, valid_step, correct_step = loss_pack['loss'], loss_pack['total_step'], loss_pack[
                 'valid_step'], loss_pack['correct_step']
@@ -115,10 +103,10 @@ class Trainer:
             # 3. backward and optimization only in train
             if train:
                 self.optim_schedule.zero_grad()
-                if self.bert_optim: self.bert_optim.zero_grad()
+                if self.bert_optim is not None: self.bert_optim.zero_grad()
                 loss.backward()
                 self.optim_schedule.step_and_update_lr()
-                if self.bert_optim: self.bert_optim.step()
+                if self.bert_optim is not None: self.bert_optim.step()
 
             avg_loss += loss.item()
             total_correct += correct_step

@@ -7,10 +7,15 @@ from .type_embedding import PositionalEmbedding, TemporalEmbedding, ModalityEmbe
 class PreTrainBert(nn.Module):
     def __init__(self, args):
         super().__init__()
-        self.total_len = args.utter_len + args.sql_len + args.db_len
         from transformers import BertModel, BertTokenizer, BertConfig
         self.bert = BertModel.from_pretrained('bert-base-uncased')
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        self.bert_vocab = BertTokenizer.from_pretrained('bert-base-uncased').get_vocab()
+        self.unk_idx = self.bert_vocab.get('[UNK]')
+        self.pad_idx = self.bert_vocab.get('[PAD]')
+        if args.save_bert_vocab:
+            with open('./bert_vocab.txt', 'w', encoding='UTF-8') as f:
+                for key, value in self.bert_vocab.items():
+                    f.writelines('{} {}\n'.format(key, value))
 
     def forward(self, data):
         '''
@@ -19,14 +24,14 @@ class PreTrainBert(nn.Module):
         sentence should add special token before
         :return: shape: bs, total_len, hidden state of bert
         '''
+        data_tokens = []
 
         for item in data:
-            assert len(item.split()) == self.total_len
+            data_tokens.append([self.bert_vocab.get(s, self.unk_idx) for s in item.split()])
+        data_tokens = torch.tensor(data_tokens)
 
-        encoded = self.tokenizer.batch_encode_plus(batch_text_or_text_pairs=data, return_tensors='pt',
-                                                   add_special_tokens=False)
-
-        output = self.bert(**encoded)  # self.batch_size, self.total_len, -1)
+        output = self.bert(input_ids=data_tokens, attention_mask=(
+                data_tokens != self.pad_idx).float())  # self.batch_size, self.total_len, -1)
         return output[0]
 
 
@@ -36,7 +41,8 @@ class InputEmbedding(nn.Module):
         super().__init__()
         self.input_size = args.input_size
         self.total_len = args.utter_len + args.sql_len + args.db_len
-        self.max_turn = args.max_turn
+        self.utter_len = args.utter_len
+        self.turn_num = args.turn_num
         self.max_table = args.max_table
         self.position_embedding = PositionalEmbedding(d_model=self.input_size, total_len=self.total_len)
 
@@ -45,27 +51,35 @@ class InputEmbedding(nn.Module):
         self.modality_embedding = ModalityEmbedding(embed_size=self.input_size)
 
         self.db_embedding = DBEmbedding(max_table=self.max_table, embed_size=self.input_size)
-        if args.bert:
+        if args.use_bert:
             self.pre_train_embedding = PreTrainBert(args)
 
-    def parse_batch_content(self, batch_content):
+    def parse_batch_content(self, batch_content, type):
         '''
         :param batch_content: [str1,str2]
         :return: bs,total,hidden
         '''
         batch_size = len(batch_content)
         batch_content_embedding = self.pre_train_embedding(batch_content)
-        assert batch_content_embedding.shape == (batch_size, self.total_len, self.input_size)
+        if type == 'content':
+            assert batch_content_embedding.shape == (batch_size, self.total_len, self.input_size)
+        elif type == 'utterance':
+            assert batch_content_embedding.shape == (batch_size, self.utter_len, self.input_size)
+        else:
+            raise Exception('InValid Type !')
         return batch_content_embedding
 
-    def parse_content(self, content):
+    def parse_content(self, content, type):
         '''
         :param content: [str1]
         :return: total_len,hidden
         '''
         assert len(content) == 1
         content_embedding = self.pre_train_embedding([content])[0, :, :]
-        assert content_embedding.shape == (self.total_len, self.input_size)
+        if type == 'content':
+            assert content_embedding.shape == (self.total_len, self.input_size)
+        if type == 'utterance':
+            assert content_embedding.shape == (self.utter_len, self.input_size)
         return content_embedding
 
     def parse_signal(self, signal, type):
@@ -101,9 +115,8 @@ class OutputEmbedding(nn.Module):
                      'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
                      '+', '/']
 
-
         self.embedding = nn.Embedding(num_embeddings=len(self.dict), embedding_dim=args.hidden, padding_idx=0)
-        self.transform_keyword_dist = nn.Linear(self.hidden, len(self.dict))
+        self.transform_keyword_dist = nn.Linear(args.hidden, len(self.dict))
 
     def convert_str_to_embedding(self, item):
         '''
@@ -112,7 +125,7 @@ class OutputEmbedding(nn.Module):
         :return:
         '''
         if item in self.dict:
-            return self.embedding(self.dict.index(item)).squeeze()
+            return self.embedding(torch.tensor(self.dict.index(item))).squeeze()
         else:
             raise Exception('This token {} is not in output embedding dict!'.format(item))
 
@@ -139,12 +152,32 @@ class OutputEmbedding(nn.Module):
 if __name__ == '__main__':
     from collections import namedtuple
 
-    Args = namedtuple('Args', 'batch_size total_len')
-    args = Args(2, 5)
-    print(args.batch_size, args.total_len)
+    Args = namedtuple('Args', 'batch_size utter_len sql_len db_len')
+    # args = Args(2, 30, 65, 300)
+    args = Args(2, 0, 0, 65)
+    # print(args.batch_size, args.total_len)
     bert = PreTrainBert(args)
-    data = ['[CLS] i love you [SEP]', '[CLS] you love me [SEP]']
-    print(bert(data))
-    '''
-    {'input_ids': [[101, 1045, 2293, 2017, 102], [101, 2017, 2293, 2033, 102]],
-    '''
+
+    f = [
+        '[SEP] select count ( department . departmentid ) group by department . departmentid [SEP] [PAD] [PAD] [PAD] '
+        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] '
+        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] '
+        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD]',
+        '[SEP] select count ( department . departmentid ) group by department . departmentid [SEP] [PAD] [PAD] [PAD] '
+        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] '
+        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] '
+        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD]',
+
+    ]
+
+    test1 = ['department']
+    test2 = ['departmentid']
+    from transformers import BertModel, BertTokenizer, BertConfig
+
+    bert_t = BertTokenizer.from_pretrained('bert-base-uncased')
+    bert_vocab = BertTokenizer.from_pretrained('bert-base-uncased').get_vocab()
+
+    encoded_inputs = bert_t(test1, return_tensors='pt', add_special_tokens=False)
+    print(encoded_inputs)
+    encoded_inputs = bert_t(test2, return_tensors='pt', add_special_tokens=False)
+    print(encoded_inputs)

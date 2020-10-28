@@ -2,10 +2,10 @@ import warnings
 
 
 class DefaultConfig(object):
-    seed = 3435
-    num_epochs = 100
-    use_gpu = True  # user GPU or not
-    gpu_id = 0
+    # seed = 3435
+    # num_epochs = 100
+    # use_gpu = True  # user GPU or not
+    # gpu_id = 0
     use_max_length = True
     max_length = {
         'sql': 65,
@@ -55,4 +55,4 @@ def parse(self, kwargs):
 
 DefaultConfig.parse = parse
 opt = DefaultConfig()
-print(opt)
+# print(opt)
