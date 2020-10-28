@@ -1,7 +1,5 @@
-import torch
+from transformers import BertTokenizer
 
-a, b = 1, 2
-if a % b == 0:
-    print(True)
-else:
-    print(False)
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+print(tokenizer.tokenize("AppointmentID"))
+print(tokenizer.tokenize("PrimaryAffiliation"))
