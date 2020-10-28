@@ -5,6 +5,7 @@ from dataset import ATIS_DataSetLoad as DataSetLoad
 from model import Model
 from trainer import Trainer
 import os
+import pickle
 
 os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
@@ -75,6 +76,7 @@ def train():
     parser.add_argument("-d", "--dataset", type=str, default='sparc', help="sparc or cosql")
 
     parser.add_argument("-o", "--output_path", type=str, default='output/trained_model', help="model save path")
+    parser.add_argument("--dataset_path", type=str, default='./catch/', help="dataset save path")
     parser.add_argument("--save_bert_vocab", type=bool, default=True, help="Save bert vocab or not")
 
     # dataset opts
@@ -103,7 +105,7 @@ def train():
     # trainer opts
     parser.add_argument("-e", "--epochs", type=int, default=20, help="number of epochs")
     parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false")
-    parser.add_argument("--log_freq", type=int, default=200, help="printing loss every n iter: setting n")
+    parser.add_argument("--log_freq", type=int, default=20, help="printing loss every n iter: setting n")
     parser.add_argument("--cuda_devices", type=int, nargs='+', default=None, help="CUDA device ids")
     parser.add_argument("--load_epoch", type=int, default=-1, help="load epoch x's model param")
     parser.add_argument("--lr", type=float, default=1e-3, help="learning rate of adam")
@@ -118,11 +120,22 @@ def train():
     args = parser.parse_args()
 
     print("Loading {} Dataset".format(args.dataset))
-    dataset_opt = DataSetConfig(args)
-    dataset = DataSetLoad(dataset_opt)
+
+    dataset_path = args.dataset_path + args.dataset + '.pkl'
+
+    if os.path.exists(dataset_path):
+        with open(dataset_path, 'rb') as f:
+            dataset = pickle.load(f)
+    else:
+
+        dataset_opt = DataSetConfig(args)
+        dataset = DataSetLoad(dataset_opt)
+        with open(dataset_path, 'wb') as f:
+            print('Save dataset.pkl in {}'.format(dataset_path))
+            pickle.dump(dataset, f)
+
     print("Loading Train Dataset")
     train_data_loader = dataset.train
-
     print("Loading Test Dataset")
     test_data_loader = dataset.valid
 

@@ -88,17 +88,20 @@ class Trainer:
                               bar_format="{l_bar}{r_bar}")
 
         avg_loss = 0.0
-        total_correct = 0
-        total_element = 0
+        total_correct, db_correct, key_correct = 0, 0, 0
+        total_element, total_db, total_key = 0, 0, 0
 
         for i, data in data_iter:
 
             # 1. forward the input and all position labels
             loss_pack = self.model(data)
+            db_loss, key_loss, total_step, valid_step, db_valid_step, key_valid_step, db_correct_step, key_correct_step = \
+                loss_pack['db_loss'], loss_pack['key_loss'], loss_pack[
+                    'total_step'], loss_pack['valid_step'], loss_pack['db_valid_step'], loss_pack['key_valid_step'], \
+                loss_pack[
+                    'db_correct_step'], loss_pack['key_correct_step']
 
-            loss, total_step, valid_step, correct_step = loss_pack['loss'], loss_pack['total_step'], loss_pack[
-                'valid_step'], loss_pack['correct_step']
-
+            loss = db_loss + key_loss
             # 3. backward and optimization only in train
             if train:
                 self.optim_schedule.zero_grad()
@@ -108,23 +111,29 @@ class Trainer:
                 if self.bert_optim is not None: self.bert_optim.step()
 
             avg_loss += loss.item()
-            total_correct += correct_step
+            total_correct += (db_correct_step + key_correct_step)
+            db_correct += db_correct_step
+            key_correct += key_correct_step
             total_element += valid_step
+            total_db += db_valid_step
+            total_key += key_valid_step
 
             post_fix = {
                 "epoch": epoch,
                 "iter": i,
                 "avg_loss": avg_loss / (i + 1),
                 "step_acc": total_correct / total_element * 100,
+                "db_acc": db_correct / total_db * 100,
+                "key_acc": key_correct / total_key * 100,
                 "loss": loss.item(),
-
             }
 
             if i % self.log_freq == 0:
                 data_iter.write(str(post_fix))
 
-        print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len(data_iter), "step_acc=",
-              total_correct * 100.0 / total_element)
+        print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len(data_iter),
+              "step_acc=", total_correct * 100.0 / total_element,
+              "db_acc=", db_correct * 100 / total_db, "key_acc=", key_correct * 100 / total_key, )
         return total_correct / total_element
 
     def save(self, epoch, step_acc, file_path):

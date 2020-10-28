@@ -353,7 +353,9 @@ class Model(nn.Module):
                     idxs.append(idx)
                 idx += 1
             embedding_matrix.append(star_column)
-            dict_list.append(' . *')
+            dict_list.append('. *')  # . *
+            embedding_matrix.append(fuse_table_on_column(star_column, star_column))
+            dict_list.append('* . *')  # * . *
             assert len(embedding_matrix) == len(dict_list)
             return embedding_matrix, dict_list
 
@@ -384,10 +386,16 @@ class Model(nn.Module):
             turn_db_embedding = db_embedding_matrix[i, :, :]
             sql_embeddings = []
             for item in source_sql[i]:
-                if item in db_dict_list:
-                    unit_embedding = turn_db_embedding[db_dict_list.index(item), :].squeeze()
-                else:
+
+                if self.output_keyword_embedding.in_dict(item):
                     unit_embedding = self.output_keyword_embedding.convert_str_to_embedding(item).squeeze()
+                else:
+                    if item in db_dict_list:
+                        unit_embedding = turn_db_embedding[db_dict_list.index(item), :].squeeze()
+                    else:
+                        print('{} is not find in DB (->replace to [* . *])'.format(item))
+                        unit_embedding = turn_db_embedding[db_dict_list.index('* . *'), :].squeeze()
+
                 sql_embeddings.append(unit_embedding)
             sql_embeddings = torch.stack(sql_embeddings, dim=0)  # unit_num,hidden
             batch_sql_embeddings.append(sql_embeddings)
@@ -426,14 +434,17 @@ class Model(nn.Module):
         '''
 
         def find_item_idx(item):
-            if item in db_dict_list:
-                return db_dict_list.index(item)
+            if self.output_keyword_embedding.in_dict(item):
+                return self.output_keyword_embedding.find_str_idx(item) + len(db_dict_list), 'keywords'
             else:
-                return self.output_keyword_embedding.find_str_idx(item) + len(db_dict_list)
+                if item in db_dict_list:
+                    return db_dict_list.index(item), 'db_unit'
+                else:
+                    return db_dict_list.index('* . *'), 'db_unit'
 
-        total_step, valid_step, correct_step = 0, 0, 0
+        total_step, valid_step, db_valid_step, key_valid_step, db_correct_step, key_correct_step = 0, 0, 0, 0, 0, 0
         assert len(target_sql) == final_prob_dist.shape[0]
-        loss_list = []
+        db_loss_list, key_loss_list = [], []
         for sole_sql, sole_sql_dist in zip(target_sql, final_prob_dist):
             assert len(sole_sql) == sole_sql_dist.shape[0]
             for item, item_dist in zip(sole_sql, sole_sql_dist):
@@ -441,15 +452,25 @@ class Model(nn.Module):
                 if item == '[PAD]':
                     continue
                 valid_step += 1
-                idx = find_item_idx(item)
-                loss_list.append(-1 * torch.log(item_dist[idx]))
-                correct_step += (1 if torch.argmax(item_dist) == idx else 0)
+                idx, type = find_item_idx(item)
+                if type == 'db_unit':
+                    db_valid_step += 1
+                    db_loss_list.append(-1 * torch.log(item_dist[idx]))
+                    db_correct_step += (1 if torch.argmax(item_dist) == idx else 0)
+                elif type == 'keywords':
+                    key_valid_step += 1
+                    key_loss_list.append(-1 * torch.log(item_dist[idx]))
+                    key_correct_step += (1 if torch.argmax(item_dist) == idx else 0)
 
         return {
-            'loss': torch.sum(torch.stack(loss_list, dim=-1), dim=-1),
+            'db_loss': torch.sum(torch.stack(db_loss_list, dim=-1), dim=-1),
+            'key_loss': torch.sum(torch.stack(key_loss_list, dim=-1), dim=-1),
             'total_step': total_step,
             'valid_step': valid_step,
-            'correct_step': correct_step
+            'db_valid_step': db_valid_step,
+            'key_valid_step': key_valid_step,
+            'db_correct_step': db_correct_step,
+            'key_correct_step': key_correct_step
         }
 
     def forward(self, data):
@@ -488,7 +509,7 @@ class Model(nn.Module):
 
         # lookup from column4table and build db embedding and dict from turn_batch_db_fuse_feature
         db_embedding_matrix, db_dict_list = self.built_output_dbembedding(turn_batch_db_fuse_feature, data)
-        print(db_dict_list)
+        # print(db_dict_list)
         # get source sql and target sql text sequence
         source_sql, target_sql = [item['sql1'] for item in data][1:], [item['sql2'] for item in data][1:]
 

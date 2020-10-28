@@ -18,6 +18,8 @@ import torch
 :param temporal: 0 db， 第一轮：1 ，，，
 :param db 0 无  1 table1 2 table2 3 table3 先不考虑sql
 '''
+
+
 # data:{
 # content, db_signal, temporal_signal, modality_signal, mask_signal,
 # column4table(column对应元素代表其table编号)
@@ -223,9 +225,15 @@ class ATIS_DataSetLoad():
                 table = []
                 column = []
                 for item in column_0:
-                    column += wordninja.split(item)
+                    if item == '*':
+                        column += item
+                    else:
+                        column += wordninja.split(item)
                 for item in table_0:
-                    table += wordninja.split(item)
+                    if item == '*':
+                        table += item
+                    else:
+                        table += wordninja.split(item)
                 # 给出source样式
                 split_word = ''
                 for word in table:
@@ -260,7 +268,10 @@ class ATIS_DataSetLoad():
             split_word = ''
             for word in words:
                 split_word += word + ' '
-                content += wordninja.split(word)
+                if word == '*':
+                    content += word
+                else:
+                    content += wordninja.split(word)
             split_word = split_word[:-1]
             source.append(split_word)
         temporal = [turn for _ in content]
@@ -295,7 +306,10 @@ class ATIS_DataSetLoad():
             split_column_0 = re.split('[ _]', column[1].lower())
             split_column = []
             for item in split_column_0:
-                split_column += wordninja.split(item)
+                if item == '*':
+                    split_column += item
+                else:
+                    split_column += wordninja.split(item)
             split_database['tokens'] += ['[SEP]']
             split_database['tokens'] += split_column
             split_database['db_signal'] += [0]

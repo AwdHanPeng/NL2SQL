@@ -136,6 +136,12 @@ class OutputEmbedding(nn.Module):
         else:
             raise Exception('This token {} is not in output embedding dict!'.format(item))
 
+    def in_dict(self, item):
+        if item in self.dict:
+            return True
+        else:
+            return False
+
     def find_str_idx(self, item):
         '''
 
