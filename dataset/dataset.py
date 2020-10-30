@@ -217,7 +217,10 @@ class ATIS_DataSetLoad():
                         table = tables[index].lower()
                         break
                 for index in range(len(columns_ori)):
-                    if columns_ori[index][1].lower() == column and columns[index][1].lower() != column:
+                    table_index = columns_ori[index][0]
+                    table_compare = tables[table_index].lower()
+                    if columns_ori[index][1].lower() == column and columns[index][
+                        1].lower() != column and table == table_compare:
                         column = columns[index][1].lower()
                         break
                 table_0 = re.split('[ _]', table.lower())

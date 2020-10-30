@@ -80,43 +80,56 @@ def train():
     parser.add_argument("--save_bert_vocab", type=bool, default=True, help="Save bert vocab or not")
 
     # dataset opts
-    parser.add_argument("--utter_len", type=int, default=30, help="maximum sequence length of utterance")
-    parser.add_argument("--sql_len", type=int, default=65, help="maximum sequence length of sql")
-    parser.add_argument("--db_len", type=int, default=300,
+    parser.add_argument("--utter_len", type=int, default=40, help="maximum sequence length of utterance")
+    parser.add_argument("--sql_len", type=int, default=50, help="maximum sequence length of sql")
+    parser.add_argument("--db_len", type=int, default=422,
                         help="maximum sequence length of db (column and table)")
     parser.add_argument("--turn_num", type=int, default=6, help="maximum turn number of dialogue")
     parser.add_argument("--max_table", type=int, default=26, help="maximum table number of dialogue")
     parser.add_argument("--decode_length", type=int, default=65, help="maximum decode step for SQL")
+    parser.add_argument("--shuffle", type=bool, default=False,
+                        help="shuffle the train dataset")
 
     # model opts
     parser.add_argument("--input_size", type=int, default=768, help="the embedding dim for content (bert dim)")
     parser.add_argument("--hidden", type=int, default=512, help="hidden size of transformer model")
     parser.add_argument("--ffn_dim", type=int, default=1024, help="ffn dim of transformer")
-    parser.add_argument("--max_turn", type=int, default=4, help="valid turn of history content in a session")
+    parser.add_argument("--max_turn", type=int, default=5, help="valid turn of history content in a session")
     parser.add_argument("--utterrnn_input", type=int, default=512, help="utter-level rnn input size")
     parser.add_argument("--utterrnn_output", type=int, default=512,
                         help="utter-level rnn output size (equal to decoder rnn input size)")
     parser.add_argument("--decodernn_output", type=int, default=512, help="decoder rnn output size")
     parser.add_argument("--decodernn_input", type=int, default=1024, help="decoder rnn input size")
     # model opts for transformer
-    parser.add_argument("--n_layers", type=int, default=8, help="number of layers")
+    parser.add_argument("--n_layers", type=int, default=4, help="number of layers")
     parser.add_argument("--attn_heads", type=int, default=8, help="number of attention heads")
 
     # trainer opts
-    parser.add_argument("-e", "--epochs", type=int, default=20, help="number of epochs")
+    parser.add_argument("-e", "--epochs", type=int, default=100, help="number of epochs")
     parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false")
     parser.add_argument("--log_freq", type=int, default=20, help="printing loss every n iter: setting n")
     parser.add_argument("--cuda_devices", type=int, nargs='+', default=None, help="CUDA device ids")
     parser.add_argument("--load_epoch", type=int, default=-1, help="load epoch x's model param")
-    parser.add_argument("--lr", type=float, default=1e-3, help="learning rate of adam")
+    parser.add_argument("--lr", type=float, default=1e-5, help="learning rate of adam")
     parser.add_argument("--use_bert", type=bool, default=True, help="use bert or not")
     parser.add_argument("--lr_bert", type=float, default=3e-6, help="learning rate of adam for bert")
-    parser.add_argument("--fix_bert", type=bool, default=False, help="fix bert param of fine-tune")
+    parser.add_argument("--fix_bert", type=bool, default=True, help="fix bert param of fine-tune")
     parser.add_argument("--warmup_steps", type=int, default=2000, help="warmup_steps == 4000/20")
     parser.add_argument("--adam_weight_decay", type=float, default=0.01, help="weight_decay of adam")
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="adam first beta value")
     parser.add_argument("--adam_beta2", type=float, default=0.999, help="adam first beta value")
 
+    # model enhance
+    parser.add_argument("--decode_in_out_fuse", type=bool, default=True, help="fuse decoder output and input")
+    parser.add_argument("--db_embedding_feature_bilinear", type=bool, default=True,
+                        help="bilinear between decoder feature and db embedding")
+    parser.add_argument("--db_fuse_concat", type=bool, default=False,
+                        help="fuse mulit db feature use concat or add")
+
+    # model debug
+    parser.add_argument("--tiny_dataset", type=bool, default=True, help="use 10 sample to debug")
+    parser.add_argument("--warmup", type=bool, default=False, help="warmup or not")
+    parser.add_argument("--grad_clip", type=bool, default=False, help="grad clip or not")
     args = parser.parse_args()
 
     print("Loading {} Dataset".format(args.dataset))
@@ -135,26 +148,32 @@ def train():
             pickle.dump(dataset, f)
 
     print("Loading Train Dataset")
-    train_data_loader = dataset.train
+    train_data_loader = dataset.train.data
     print("Loading Test Dataset")
-    test_data_loader = dataset.valid
+    test_data_loader = dataset.valid.data
+
+    if args.tiny_dataset:
+        print('Use Tiny Dateset')
+        train_data_loader = train_data_loader[:5] + train_data_loader[100:105] + train_data_loader[
+                                                                                 200:205] + train_data_loader[300:305]
+        test_data_loader = test_data_loader[:5]
 
     print("Building NL2SQL model")
     model = Model(args)
 
     # download bert
     print("Creating BERT Trainer")
-    trainer = Trainer(model, train_dataloader=train_data_loader.data, test_dataloader=test_data_loader.data, args=args)
+    trainer = Trainer(model, train_dataloader=train_data_loader, test_dataloader=test_data_loader, args=args)
 
     if args.load_epoch >= 0:
         print("Load Epoch {}'s Param".format(args.load_epoch))
-        trainer.load(epoch=args.load_epoch, file_path=args.output_path)
+        trainer.load(epoch=args.load_epoch, file_path=args.output_path, )
 
     print("Training Start")
     for epoch in range(args.epochs):
         trainer.train(epoch)
-        valid_step_acc = trainer.test(epoch)
-        trainer.save(epoch, valid_step_acc, args.output_path)
+        valid_step_acc, valid_string_acc = trainer.test(epoch)
+        trainer.save(epoch, valid_step_acc, valid_string_acc, args.output_path)
 
 
 if __name__ == '__main__':
