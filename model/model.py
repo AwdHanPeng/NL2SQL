@@ -78,6 +78,7 @@ class Model(nn.Module):
         if self.trigger_db_embedding_feature_bilinear:
             # (turn_batch, decode_length, hidden) * (turn_batch,db_units_num,hidden) ->(turn_batch, decode_length,db_units_num)
             self.db_embedding_feature_bilinear = nn.Linear(self.hidden, self.hidden)
+        self.hard_atten = args.hard_atten
 
     def create_pre_turn_embedding(self, data):
         '''
@@ -195,13 +196,15 @@ class Model(nn.Module):
         :param turn_batch_content_mask: (turn,max_turn,len) # you also need reverse
         :return: turn_num, self.decode_length, self.decoder_rnn_output_size
         """
+
         assert decoder_input_sql_embedding.shape[1] == self.decode_length
         decoder_state_list = []
         turn_batch_num = turn_batch_feature.shape[0]
 
         # we get last utter sum to init the first hidden state of decoder rnn
         # current_decoder_state = torch.zeros(turn_batch_num, self.decoder_rnn_output_size)
-        current_decoder_state = torch.sum(turn_utter_encoder_feature, dim=1)
+        current_decoder_state = torch.sum(
+            turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0), dim=1)
 
         rever_turn_batch_feature = torch.flip(turn_batch_feature, dims=[1])  # reverse for utterance rnn
         rever_turn_batch_content_mask = torch.flip(turn_batch_content_mask, dims=[1])  # reverse for content mask
@@ -210,7 +213,8 @@ class Model(nn.Module):
             # we get last utter sum to init the first hidden state of utterlevel rnn
             # current_utterrnn_state = self.tranform_lastutter_initutterrnn(torch.sum(turn_utter_encoder_feature, dim=1))
             # we set utterance_rnn_output_size == hidden, so no need to convert dim
-            current_utterrnn_state = torch.sum(turn_utter_encoder_feature, dim=1)
+            current_utterrnn_state = torch.sum(
+                turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0), dim=1)
 
             utterrnn_state_list = []
             for j in range(self.max_turn):
@@ -286,11 +290,12 @@ class Model(nn.Module):
         :param mask: turn_num-1, db_len/utter_len/sql_len
         :return: turn_num-1, hidden
         '''
-
         attention = torch.einsum('ik,ijk -> ij', key, value)
         assert mask.shape == attention.shape
         if mask is not None: attention = attention.masked_fill(mask == 0, -1e9)
         weight = torch.softmax(attention, dim=-1)
+        if self.hard_atten and mask is not None:
+            value = value.masked_fill(mask.unsqueeze(-1) == 0, 0.0)
         weight_sum = torch.einsum('ij,ijk -> ik', weight, value)
         return weight_sum
 
@@ -327,8 +332,8 @@ class Model(nn.Module):
         :return:# turn-1,db_len,hidden
         '''
         turn_batch_db_feature = turn_batch_feature[:, :, :self.db_len, :]  # turn,max_turn,db_len,hidden
-        turn_batch_mask = turn_batch_mask.unsqueeze(-1).unsqueeze(-1)
-        turn_batch_db_feature = turn_batch_db_feature.masked_fill(turn_batch_mask == 0, 0.0)
+        # turn_batch_mask = turn_batch_mask.unsqueeze(-1).unsqueeze(-1)
+        # turn_batch_db_feature = turn_batch_db_feature.masked_fill(turn_batch_mask == 0,0.0)  # this is all 0, not need masked
         turn_batch_db_feature = turn_batch_db_feature.permute(0, 2, 1, 3)  # turn,db_len,max_turn,hidden
         # turn-1,db_len,max_turn*hidden
         if self.trigger_db_fuse_concat:
@@ -375,7 +380,7 @@ class Model(nn.Module):
             dict_list = []
             for id, token in zip(column4table, content):
                 if id == 0:
-                    word_group_feature = get_feature_from_idxs(idxs)
+                    word_group_feature = get_feature_from_idxs([id + 3 for id in idxs])
                     word_group_str = ' '.join([content[idx] for idx in idxs])
                     if current_type == 'column':
                         fuse_table_column = fuse_table_on_column(current_table_embedding, word_group_feature)
@@ -487,6 +492,7 @@ class Model(nn.Module):
                 if item in db_dict_list:
                     return db_dict_list.index(item), 'db_unit'
                 else:
+                    print('Can not find {} item of target SQL in db Dict!'.format(item))
                     return db_dict_list.index('* . *'), 'db_unit'
 
         total_step, valid_step, db_valid_step, key_valid_step, db_correct_step, key_correct_step = 0, 0, 0, 0, 0, 0
@@ -575,6 +581,7 @@ class Model(nn.Module):
         # (turn+1,len,hidd) (turn,utter_len,hidden)
 
         # split original content turn sequence into mulit session samples
+
         turn_batch_feature, turn_batch_mask, turn_batch_content_mask = self.create_turn_batch(turn_encoder_feature,
                                                                                               turn_mask)
         # (turn,max_turn,len,hidden) # (turn,max_turn) # (turn,max_turn,len)

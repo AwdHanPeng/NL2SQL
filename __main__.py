@@ -101,7 +101,7 @@ def train():
     parser.add_argument("--decodernn_output", type=int, default=512, help="decoder rnn output size")
     parser.add_argument("--decodernn_input", type=int, default=1024, help="decoder rnn input size")
     # model opts for transformer
-    parser.add_argument("--n_layers", type=int, default=4, help="number of layers")
+    parser.add_argument("--n_layers", type=int, default=2, help="number of layers")
     parser.add_argument("--attn_heads", type=int, default=8, help="number of attention heads")
 
     # trainer opts
@@ -130,6 +130,7 @@ def train():
     parser.add_argument("--tiny_dataset", type=bool, default=True, help="use 10 sample to debug")
     parser.add_argument("--warmup", type=bool, default=False, help="warmup or not")
     parser.add_argument("--grad_clip", type=bool, default=False, help="grad clip or not")
+    parser.add_argument("--hard_atten", type=bool, default=True, help="Avoid [0]*N mask, still get a sum")
     args = parser.parse_args()
 
     print("Loading {} Dataset".format(args.dataset))

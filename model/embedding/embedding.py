@@ -33,7 +33,7 @@ class PreTrainBert(nn.Module):
         data_tokens = torch.tensor(data_tokens).to(self.device)
 
         output = self.bert(input_ids=data_tokens, attention_mask=(
-                data_tokens != self.pad_idx).float())  # self.batch_size, self.total_len, -1)
+                data_tokens != self.pad_idx).int())  # self.batch_size, self.total_len, -1)
         return output[0]
 
 
