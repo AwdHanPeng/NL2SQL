@@ -34,6 +34,11 @@ class DataLoad(Dataset):
         for item in data_ori:
             self.structure.append({'database': item['split_database'], 'pair': item['split_pair']})
             self.data.append(self.get_seq(item['split_database'], item['split_pair']))
+        self.total_modality = self.anly_signal()
+        self.total_db = self.anly_signal('db_signal')
+        self.total_temporal = self.anly_signal('temporal_signal')
+        self.total_mask = self.anly_signal('mask_signal')
+        pass
 
     def get_seq(self, database, pair):
         # 先将db加入序列
@@ -135,6 +140,18 @@ class DataLoad(Dataset):
             core['sql2'] = sql2
             data.append(core)
         return data
+
+    def anly_signal(self, signal='modality_signal'):
+        num = {'all': 0}
+        for data in self.data:
+            for pair in data:
+                for p in pair[signal]:
+                    num['all'] += 1
+                    if p in num.keys():
+                        num[p] += 1
+                    else:
+                        num[p] = 1
+        return num
 
     def __getitem__(self, index):
         assert index < len(self.data)
