@@ -13,8 +13,8 @@ from .atis_vocab import ATISVocabulary
 
 # ENTITIES_FILENAME = './dataset/entities.txt'
 # ANONYMIZATION_FILENAME = './dataset/anonymization.txt'
-ENTITIES_FILENAME = './dataset/entities.txt'
-ANONYMIZATION_FILENAME = './dataset/anonymization.txt'
+ENTITIES_FILENAME = '../dataset/entities.txt'
+ANONYMIZATION_FILENAME = '../dataset/anonymization.txt'
 
 class ATISDataset():
     """ Contains the ATIS data. """

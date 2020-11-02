@@ -6,6 +6,11 @@ class DefaultConfig(object):
     # num_epochs = 100
     # use_gpu = True  # user GPU or not
     # gpu_id = 0
+    use_keywords = True
+    keywords = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
+                     '+', '/']
     use_max_length = True
     max_length = {
         'sql': 65,
@@ -13,6 +18,7 @@ class DefaultConfig(object):
         'db': 300,
         'turn': 6,
         'table': 26,
+        'keyword': 75,
         'de_sql': 65,
         'de_utter': 30
     }
