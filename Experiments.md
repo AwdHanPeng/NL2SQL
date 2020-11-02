@@ -129,8 +129,90 @@ Oct30_21-58-14_ubuntu:
 模型其他部分全部检查完毕
 初次实验发现会超GPU内存，和之前有区别 所以不得已只好将transformer降到2层
 
+实验结果：发现和12-58-25次实验结果基本没什么差距
+
+
+
 
 下一步的改进措施：因为sql关键字根本就没有一个好的初始化的表示，所以是有问题的，考虑两种方案，
 一是用bert初始化一个然后切断和bert之间的梯度，
 另一个就是采用拼接的方式
 
+
+Nov02_12-35-43_ubuntu
+模型更改：先降低bert维度 随后add signal，降低了signal的维度
+此时保留两层transformer，并且没有key初始化
+并且去除testloader 同时也保证了样本内的db是一致的，db acc也是有评估意义的
+
+Nov02_13-00-24_ubuntu
+进行和上轮一样的对照试验
+仍然去除testloader 但是不使用pre trans
+实验结果 发现差别不大  keyword的表示会学习的更快一些
+
+Nov02_13-24-37_ubuntu
+仍然去除testloader 使用pre trans
+去除transformer 总体来看效果和12-35-43差不多，甚至还好一点点
+
+Nov02_15-07-04_ubuntu
+去除testloader 使用pre trans  去除transformer 使用key初始化
+貌似两者并没有任何的差别
+
+Nov02_15-38-51_ubuntu
+使用全部数据 使用全部层数trans  使用pre trans  取消key init 使用hard attn
+bert可学习
+
+Nov02_17-51-49_ubuntu
+修改： 将sum全部改成mean
+
+
+
+Nov02_18-14-32_ubuntu
+修改： 将sum全部改成mean
+lr 调整到1e-3 bert finetune
+
+Nov02_18-23-30_ubuntu
+修改： 将sum全部改成mean
+lr 调整到1e-3 bert finetune
+小样本调试
+
+一顿乱搞之后发现key学的其实还挺快，只要学习率跟上了就能学的很快，但是db的loss还是不行啊
+db还是有毛病 还是得再检查一遍代码
+
+Nov02_19-26-42_ubuntu
+实验设置，设置max turn=1，模型退化为单轮模型，观察效果
+
+Nov02_20-17-13_ubuntu
+实验设置，设置max turn=1，模型退化为单轮模型，
+把初始化的地方重新换成sum了，这个地方之后还得再改，现在sum倒也能暂时缓解0的问题
+
+Nov02_20-34-51_ubuntu
+新的实验考量，会不会utterance在decoder部分没有发挥作用？
+因为这个本来就是seq2seq的类似翻译的模型，现在对utter的连接却过于长了
+所以考虑在decoder部分再多加一个utter的链接
+decoder每一步的hidden和utter hiddens进行atten，然后拼起来，喂到decoder rnn里
+结果：感觉在退化成单轮的情况下差别几乎没有
+看看多轮吧
+
+
+Nov02_20-41-28_ubuntu
+在多轮上进行实验 
+感觉key学的有进步 但是db反而不大行了
+
+
+Nov02_21-03-10_ubuntu
+现在考虑另一个事情，就是db进行sum的时候真的有必要吗
+db里边的信息太多了 很多都没有必要
+可以考虑三路融合时只保留两路
+好像屁用没有 made
+
+
+
+决定：先根据已有的内容实现一个更简单的模型
+保留对db解析的那一部分，随后当前utter和db进行atten
+然后utter和sql之间采用最简单的seqatten模型就行decoder
+看看这样的效果如何
+
+
+
+
+CUDA_VISIBLE_DEVICES=5 python __main__.py --shuffle=True --tiny_dataset=True --max_turn=1

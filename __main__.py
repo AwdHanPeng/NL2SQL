@@ -7,8 +7,6 @@ from trainer import Trainer
 import os
 import pickle
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
-
 
 class DataSetConfig(object):
     def __init__(self, args):
@@ -101,7 +99,7 @@ def train():
     parser.add_argument("--decodernn_output", type=int, default=512, help="decoder rnn output size")
     parser.add_argument("--decodernn_input", type=int, default=1024, help="decoder rnn input size")
     # model opts for transformer
-    parser.add_argument("--n_layers", type=int, default=2, help="number of layers")
+    parser.add_argument("--n_layers", type=int, default=8, help="number of layers")
     parser.add_argument("--attn_heads", type=int, default=8, help="number of attention heads")
 
     # trainer opts
@@ -110,10 +108,10 @@ def train():
     parser.add_argument("--log_freq", type=int, default=20, help="printing loss every n iter: setting n")
     parser.add_argument("--cuda_devices", type=int, nargs='+', default=None, help="CUDA device ids")
     parser.add_argument("--load_epoch", type=int, default=-1, help="load epoch x's model param")
-    parser.add_argument("--lr", type=float, default=1e-5, help="learning rate of adam")
+    parser.add_argument("--lr", type=float, default=1e-3, help="learning rate of adam")
     parser.add_argument("--use_bert", type=bool, default=True, help="use bert or not")
-    parser.add_argument("--lr_bert", type=float, default=3e-6, help="learning rate of adam for bert")
-    parser.add_argument("--fix_bert", type=bool, default=True, help="fix bert param of fine-tune")
+    parser.add_argument("--lr_bert", type=float, default=1e-5, help="learning rate of adam for bert")
+    parser.add_argument("--fix_bert", type=bool, default=False, help="fix bert param of fine-tune")
     parser.add_argument("--warmup_steps", type=int, default=2000, help="warmup_steps == 4000/20")
     parser.add_argument("--adam_weight_decay", type=float, default=0.01, help="weight_decay of adam")
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="adam first beta value")
@@ -127,10 +125,19 @@ def train():
                         help="fuse mulit db feature use concat or add")
 
     # model debug
-    parser.add_argument("--tiny_dataset", type=bool, default=True, help="use 10 sample to debug")
+    parser.add_argument("--tiny_dataset", type=bool, default=False, help="use 10 sample to debug")
     parser.add_argument("--warmup", type=bool, default=False, help="warmup or not")
     parser.add_argument("--grad_clip", type=bool, default=False, help="grad clip or not")
     parser.add_argument("--hard_atten", type=bool, default=True, help="Avoid [0]*N mask, still get a sum")
+    parser.add_argument("--pre_trans", type=bool, default=True,
+                        help="True: pre convert bert/glove embedding into dim and then add signal; False: add signal and then convert dim")
+    parser.add_argument("--key_feature_init", type=bool, default=False, help="init key embedding use content feature")
+    parser.add_argument("--key_file_init", type=bool, default=False, help="read embedding file to init key embedding")
+    parser.add_argument("--utter_fuse", type=bool, default=True, help="fuse utter during decode step")
+    parser.add_argument("--three_fuse", type=bool, default=False, help="fuse utter and sql, except db in decode step")
+    parser.add_argument("--base_model", type=bool, default=True, help="base model")
+    parser.add_argument("--use_signal", type=bool, default=False, help="use siganl or not")
+    parser.add_argument("--embedding_matrix_random", type=bool, default=False, help="use siganl or not")
     args = parser.parse_args()
 
     print("Loading {} Dataset".format(args.dataset))
@@ -155,16 +162,16 @@ def train():
 
     if args.tiny_dataset:
         print('Use Tiny Dateset')
-        train_data_loader = train_data_loader[:5] + train_data_loader[100:105] + train_data_loader[
-                                                                                 200:205] + train_data_loader[300:305]
-        test_data_loader = test_data_loader[:5]
+        train_data_loader = train_data_loader[:5]
+        test_data_loader = None
+        # test_data_loader = test_data_loader[:5]
 
     print("Building NL2SQL model")
     model = Model(args)
 
     # download bert
     print("Creating BERT Trainer")
-    trainer = Trainer(model, train_dataloader=train_data_loader, test_dataloader=test_data_loader, args=args)
+    trainer = Trainer(model=model, train_dataloader=train_data_loader, test_dataloader=test_data_loader, args=args)
 
     if args.load_epoch >= 0:
         print("Load Epoch {}'s Param".format(args.load_epoch))
@@ -173,8 +180,9 @@ def train():
     print("Training Start")
     for epoch in range(args.epochs):
         trainer.train(epoch)
-        valid_step_acc, valid_string_acc = trainer.test(epoch)
-        trainer.save(epoch, valid_step_acc, valid_string_acc, args.output_path)
+        if test_data_loader is not None:
+            valid_step_acc, valid_string_acc = trainer.test(epoch)
+            trainer.save(epoch, valid_step_acc, valid_string_acc, args.output_path)
 
 
 if __name__ == '__main__':
