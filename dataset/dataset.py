@@ -361,7 +361,7 @@ class ATIS_DataSetLoad():
         table_num = 0
         table = ''
         table_to_loc = {'': []}
-        column_to_loc = {'*':[[],[1]], '. *': [[],[1]], '* . *': [[1],[1]]}
+        column_to_loc = {'*': [[], [1]]}
         for column in table_schema['column_names']:
             if column[0] >= table_num:
                 # 加入当前一系列column对应的table
