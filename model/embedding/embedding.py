@@ -22,7 +22,7 @@ class PreTrainBert(nn.Module):
     def forward(self, data):
         '''
         get bert pre model
-        :param data: ['[CLS] i love you [SEP]', '[CLS] you love me [SEP]']  batch of sentence; the
+        :param data: [['[CLS]' 'i' 'love' 'you' '[SEP]'], ['[CLS]' 'i' 'love' 'you' '[SEP]'],]  batch of sentence; the
         sentence should add special token before
         :return: shape: bs, total_len, hidden state of bert
         '''
@@ -33,7 +33,7 @@ class PreTrainBert(nn.Module):
         data_tokens = torch.tensor(data_tokens).to(self.device)
 
         output = self.bert(input_ids=data_tokens, attention_mask=(
-                data_tokens != self.pad_idx).float())  # self.batch_size, self.total_len, -1)
+                data_tokens != self.pad_idx).int())  # self.batch_size, self.total_len, -1)
         return output[0]
 
 
@@ -42,19 +42,20 @@ class InputEmbedding(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.input_size = args.input_size
+        self.embedding_size = args.hidden if args.pre_trans else args.input_size
         self.total_len = args.utter_len + args.sql_len + args.db_len
         self.utter_len = args.utter_len
         self.turn_num = args.turn_num
         self.max_table = args.max_table
         self.cuda_condition = torch.cuda.is_available() and args.with_cuda
         self.device = torch.device("cuda" if self.cuda_condition else "cpu")
-        self.position_embedding = PositionalEmbedding(d_model=self.input_size, total_len=self.total_len)
+        self.position_embedding = PositionalEmbedding(d_model=self.embedding_size, total_len=self.total_len)
 
-        self.temporal_embedding = TemporalEmbedding(max_turn=self.turn_num, embed_size=self.input_size)
+        self.temporal_embedding = TemporalEmbedding(max_turn=self.turn_num, embed_size=self.embedding_size)
 
-        self.modality_embedding = ModalityEmbedding(embed_size=self.input_size)
+        self.modality_embedding = ModalityEmbedding(embed_size=self.embedding_size)
 
-        self.db_embedding = DBEmbedding(max_table=self.max_table, embed_size=self.input_size)
+        self.db_embedding = DBEmbedding(max_table=self.max_table, embed_size=self.embedding_size)
         if args.use_bert:
             self.pre_train_embedding = PreTrainBert(args)
 
@@ -119,20 +120,44 @@ class OutputEmbedding(nn.Module):
                      'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
                      'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
                      '+', '/']
-
-        self.embedding = nn.Embedding(num_embeddings=len(self.dict), embedding_dim=args.hidden, padding_idx=0)
+        self.word_dict = ['[PAD]', '[SEP]', '=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by',
+                          'order by', 'distinct', 'and', 'limit value', 'limit', 'descent', '>', 'average', 'having',
+                          'max', 'in', '<', 'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascent', 'like', '!=',
+                          'union', 'between', '-', '+', '/']
+        self.key_feature_init = args.key_feature_init
+        self.key_file_init = args.key_file_init
+        self.hidden = args.hidden
+        self.input_size = args.input_size
+        if not args.key_feature_init:
+            if args.key_file_init:
+                self.tranform_pre_hidden = nn.Linear(args.input_size, args.hidden)
+                import pickle
+                with open('./model/embedding/embedding.pkl', 'rb') as f:
+                    print('Loading embedding files')
+                    embedding_matrix = torch.tensor(pickle.load(f))
+                    assert embedding_matrix.shape == (len(self.dict), args.input_size)
+                self.embedding = nn.Embedding.from_pretrained(embedding_matrix, padding_idx=0)
+            else:
+                self.embedding = nn.Embedding(num_embeddings=len(self.dict), embedding_dim=args.hidden, padding_idx=0)
         self.transform_keyword_dist = nn.Linear(args.hidden, len(self.dict))
         self.cuda_condition = torch.cuda.is_available() and args.with_cuda
         self.device = torch.device("cuda" if self.cuda_condition else "cpu")
 
-    def convert_str_to_embedding(self, item):
+    def convert_str_to_embedding(self, item, embedding_matrix=None):
         '''
-
+        :param embedding_matrix:
         :param item: a str token
         :return:
         '''
         if item in self.dict:
-            return self.embedding(torch.tensor(self.dict.index(item)).to(self.device)).squeeze()
+            if self.key_feature_init and embedding_matrix is not None:
+                assert embedding_matrix.shape == (len(self.dict), self.hidden)
+                return embedding_matrix[self.dict.index(item)].to(self.device).squeeze()
+            else:
+                if self.key_file_init:
+                    return self.tranform_pre_hidden(
+                        self.embedding(torch.tensor(self.dict.index(item)).to(self.device)).squeeze())
+                return self.embedding(torch.tensor(self.dict.index(item)).to(self.device)).squeeze()
         else:
             raise Exception('This token {} is not in output embedding dict!'.format(item))
 
@@ -163,34 +188,4 @@ class OutputEmbedding(nn.Module):
 
 
 if __name__ == '__main__':
-    from collections import namedtuple
-
-    Args = namedtuple('Args', 'batch_size utter_len sql_len db_len')
-    # args = Args(2, 30, 65, 300)
-    args = Args(2, 0, 0, 65)
-    # print(args.batch_size, args.total_len)
-    bert = PreTrainBert(args)
-
-    f = [
-        '[SEP] select count ( department . departmentid ) group by department . departmentid [SEP] [PAD] [PAD] [PAD] '
-        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] '
-        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] '
-        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD]',
-        '[SEP] select count ( department . departmentid ) group by department . departmentid [SEP] [PAD] [PAD] [PAD] '
-        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] '
-        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] '
-        '[PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD] [PAD]',
-
-    ]
-
-    test1 = ['department']
-    test2 = ['departmentid']
-    from transformers import BertModel, BertTokenizer, BertConfig
-
-    bert_t = BertTokenizer.from_pretrained('bert-base-uncased')
-    bert_vocab = BertTokenizer.from_pretrained('bert-base-uncased').get_vocab()
-
-    encoded_inputs = bert_t(test1, return_tensors='pt', add_special_tokens=False)
-    print(encoded_inputs)
-    encoded_inputs = bert_t(test2, return_tensors='pt', add_special_tokens=False)
-    print(encoded_inputs)
+    pass

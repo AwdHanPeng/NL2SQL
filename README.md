@@ -10,3 +10,5 @@ CoSQL: A Conversational Text-to-SQL Challenge Towards Cross-Domain Natural Langu
 
 CUDA_VISIBLE_DEVICES=3 python __main__.py 
 tensorboard --logdir=runs --bind_all
+
+CUDA_VISIBLE_DEVICES = 0

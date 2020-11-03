@@ -10,8 +10,8 @@ import tqdm
 
 class Trainer:
 
-    def __init__(self, model,
-                 train_dataloader, test_dataloader, args, ):
+    def __init__(self, model, args,
+                 train_dataloader, test_dataloader=None, ):
         """
         :param  :   model which you want to train
         :param train_dataloader: train dataset data loader
