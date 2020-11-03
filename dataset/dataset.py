@@ -29,10 +29,8 @@ import torch
 class DataLoad(Dataset):
     def __init__(self, max_length, data_ori):
         self.max_length = max_length
-        self.structure = []
         self.data = []
         for item in data_ori:
-            self.structure.append({'database': item['split_database'], 'pair': item['split_pair']})
             self.data.append(self.get_seq(item['split_database'], item['split_pair']))
         self.total_modality = self.anly_signal()
         self.total_db = self.anly_signal('db_signal')
@@ -138,7 +136,9 @@ class DataLoad(Dataset):
             core['utter'] = utter
             core['sql1'] = sql1
             core['sql2'] = sql2
+            core['db_unit'] = database['column_to_loc']
             data.append(core)
+
         return data
 
     def anly_signal(self, signal='modality_signal'):
@@ -233,7 +233,7 @@ class ATIS_DataSetLoad():
                 turn += 1
                 utterance = pair.input_seq_to_use
                 sql = pair.gold_query_to_use
-                split_pair = self.get_pair_type(turn, sql, utterance, item.schema)
+                split_pair = self.get_pair_type(turn, sql, utterance, item.schema, schema['column_to_loc'])
                 split_interaction.append(split_pair)
             leach['split_pair'] = split_interaction
             dataset_leach.append(leach)
@@ -241,7 +241,7 @@ class ATIS_DataSetLoad():
 
     # 填充数据类型序列
     # 返回字典{'utter':{'content','modality', 'temporal', 'db'},'sql':{'content', 'words', 'modality', 'temporal', 'db'}}
-    def get_pair_type(self, turn, sql, utter, schema):
+    def get_pair_type(self, turn, sql, utter, schema, column_to_loc):
         # 计算sql
         content = []
         source = []
@@ -252,10 +252,16 @@ class ATIS_DataSetLoad():
         tables_ori = schema.table_schema['table_names_original']
         tables = schema.table_schema['table_names']
         for item in sql:
-            # 当前词组出现在db中，表示为一个column词组，content需将其拆开为单词
+            # 当前词组出现在db中，表示为一个column词组，content用columns替换ori并将其拆开为单词
             if item in schema.column_names_surface_form:
                 table = ''
-                column = item
+                column_id = schema.column_names_surface_form_to_id[item]
+                column = schema.column_names_embedder_input[column_id]
+                if column == ' . *' or column == '* . *' or column == '. *' or column == '*.*':
+                    print(column)
+                if column not in column_to_loc.keys():
+                    print(column)
+                '''
                 cut = 0
                 for letter in item:
                     if letter == '.':
@@ -298,9 +304,18 @@ class ATIS_DataSetLoad():
                 for word in column:
                     split_word += word + ' '
                 split_word = split_word[:-1]
-                source.append(split_word)
-                content += table + ['.'] + column
-                modality += [1 for _ in table] + [3] + [2 for _ in column]
+                '''
+                source.append(column)
+                column_list = re.split('[ _]', column.lower())
+                content += column_list
+                if '.' in column_list:
+                    dot_id = column_list.index('.')
+                    modality += [1 for _ in column_list[:dot_id]] + [3]
+                    if dot_id < len(column_list):
+                        modality += [2 for _ in column_list[(dot_id+1):]]
+                else:
+                    modality += [2 for _ in column_list]
+                assert len(modality) == len(content)
             # 当前词组是关键字
             else:
                 key = re.split('[ _]', item.lower())
@@ -311,6 +326,7 @@ class ATIS_DataSetLoad():
                 source.append(split_word)
                 content += key
                 modality += [3 for _ in key]
+                assert len(modality) == len(content)
         temporal = [turn for _ in content]
         db = [0 for _ in content]
         sql = {'content': ['[SEP]'] + content + ['[SEP]'], 'modality_signal': [0] + modality + [0],
@@ -323,11 +339,10 @@ class ATIS_DataSetLoad():
             words = re.split('[ _]', item.lower())
             split_word = ''
             for word in words:
-                split_word += word + ' '
-                if word == '*':
-                    content += word
-                else:
-                    content += wordninja.split(word)
+                ninja = wordninja.split(word)
+                for w in ninja:
+                    split_word += w + ' '
+                content += ninja
             split_word = split_word[:-1]
             source.append(split_word)
         temporal = [turn for _ in content]
@@ -344,12 +359,17 @@ class ATIS_DataSetLoad():
         db_id = table_schema['db_id']
         split_database = {'id': db_id, 'tokens': [], 'db_signal': [], 'modality_signal': [], 'temporal_signal': []}
         table_num = 0
+        table = ''
+        table_to_loc = {'': []}
+        column_to_loc = {'*':[[],[1]], '. *': [[],[1]], '* . *': [[1],[1]]}
         for column in table_schema['column_names']:
             if column[0] >= table_num:
                 # 加入当前一系列column对应的table
-                split_table = re.split('[ _]', table_schema['table_names'][table_num].lower())
+                table = table_schema['table_names'][table_num].lower()
+                split_table = re.split('[ _]', table)
                 table_num += 1
                 split_database['tokens'] += ['[SEP]']
+                begin = len(split_database['tokens'])
                 split_database['tokens'] += split_table
                 split_database['db_signal'] += [0]
                 split_database['db_signal'] += [table_num for i in split_table]
@@ -357,16 +377,22 @@ class ATIS_DataSetLoad():
                 split_database['modality_signal'] += [1 for i in split_table]
                 split_database['temporal_signal'] += [0]
                 split_database['temporal_signal'] += [-1 for i in split_table]
+                table_to_loc[table] = [begin+i for (i,_) in enumerate(split_table)]
+                table_column = table + ' . *'
+                column_to_loc[table_column] = [table_to_loc[table], [1]]
+                assert begin + len(table_to_loc[table]) == len(split_database['tokens'])
             # 处理column
-            # 拆分departmentid
-            split_column_0 = re.split('[ _]', column[1].lower())
+            split_column = re.split('[ _]', column[1].lower())
+            '''
             split_column = []
             for item in split_column_0:
                 if item == '*':
                     split_column += item
                 else:
                     split_column += wordninja.split(item)
+            '''
             split_database['tokens'] += ['[SEP]']
+            begin = len(split_database['tokens'])
             split_database['tokens'] += split_column
             split_database['db_signal'] += [0]
             split_database['db_signal'] += [table_num for i in split_column]
@@ -374,11 +400,16 @@ class ATIS_DataSetLoad():
             split_database['modality_signal'] += [2 for i in split_column]
             split_database['temporal_signal'] += [0]
             split_database['temporal_signal'] += [-1 for i in split_column]
+            table_column = table+' . '+column[1].lower()
+            column_to_loc[table_column] = [table_to_loc[table], [begin + i for (i, _) in enumerate(split_column)]]
+            assert begin + len(column_to_loc[table_column][1]) == len(split_database['tokens'])
         # 结尾附加SEP
         split_database['tokens'] += ['[SEP]']
         split_database['db_signal'] += [0]
         split_database['modality_signal'] += [0]
         split_database['temporal_signal'] += [0]
+        split_database['column_to_loc'] = column_to_loc
+        split_database['table_to_loc'] = table_to_loc
         return split_database
 
     # 获取各类型最大长度
@@ -538,18 +569,21 @@ sample:
 __getitem__:
 
 {
-'Table':"<CLS> physician <SEP> department <SEP> affiliated with <SEP> procedures ....<SEP> undergoes <SEP> <PAD>...<PAD>“ <<<<<<<  小于args.tl的padding至args.tl，大于args.tl的样本需要进行截取
+'Table':"<CLS> physician <SEP> department <SEP> affiliated with <SEP> procedures ....<SEP> undergoes <SEP> <PAD>...<PAD>“
+ <<<<<<<  小于args.tl的padding至args.tl，大于args.tl的样本需要进行截取
 
-'Column':"<SEP> * <SEP> employee id <SEP> name <SEP> position <SEP> ... <SEP> assisting nurse <SEP> <PAD>...<PAD>" <<<<<<<  小于args.cl的padding至args.cl，大于args.cl的样本需要进行截取
+'Column':"<SEP> * <SEP> employee id <SEP> name <SEP> position <SEP> ... <SEP> assisting nurse <SEP> <PAD>...<PAD>" 
+<<<<<<<  小于args.cl的padding至args.cl，大于args.cl的样本需要进行截取
 
 
 ‘Utterance’:
-['<SEP> What is the number of employees in each department ? <SEP> <PAD>...<PAD>','<SEP> Which department has the most employees ? Give me the department name . <SEP> <PAD>...<PAD>']
+['<SEP> What is the number of employees in each department ? <SEP> <PAD>...<PAD>','<SEP> Which department has the most employees ?
+ Give me the department name . <SEP> <PAD>...<PAD>']
 '''
 '''
 
 {
-'', 'Turon', 'Weirich', 'Damianfort', 'coupon', 'Hafizabad', 'pos', 'Janessa', "'Knee", 'Party_Theme', 'kayaking', 'PetroChina', '1004', 'HOU', '00:33:18', 'assignedto', "'Regular", 'Solveig', "'AKO", 'campusfee', 'emp', '8.0', 'Blume', 'fewest', "'Billund", 'fastestlapspeed', 'address_id', 'Northridge', 'allergy', 'accelerators', 'supportrepid', 'enrollments', "'Ethiopia", 'cont', 'atb', 'logon', 'hoursperweek', 'employeeid', 'nagative', "'No", 'Robbin', 'on-hold', 'Mancini', 'assistingnurse', 'LG-P760', 'aut', 'headers', "'Full", 'MPG', 'gnp', 'chervil', "'Kolob", 'mid-field', 'derparting', 'log_entry_date', "'Hawaii", "'Initial", 'Parallax', 'Rathk', 'catalogs', 'stamina', 'ppos', 'AC/DC', '50000', 'TAMI', 'roomname', "'S", 'ratingdate', 'headquarter', 'Christop', 'inidividual', 'minoring', 'surnames', 'earns', '1.85', '120000', 'alphabetic', 'IDs', 'Maudie', 'percents', 'laptime', 'Dameon', 'ppv', 'broadcasted', 'fte', 'genreid', 'invoice', 'driverstandings', '02:59:21', 'Clauss', 'collectible', 'summed', 'stageposition', 'cred', 'fun1', '102.76', '2b', 'Homenick', 'alphabetical', 'albumid', 'makeid', 'countrycode', '160000', 'q1', 'Astrids', 'Tourist_ID', "'Vermont", 'abouve', "'Published", 'to-date', 'firstname', 'percentages', 'Kayaking', '3300', "'Arizona", 'APG', 'cheapest', "'Brig", 'Dinning', 'Zinfandel', 'dorms', "'Gottlieb", '12:00:00', 'enr', 'SWEAZ', 'Abasse', 'onscholarship', 'artistid', "'Participant", "'sed", 'sporabout', 'endowments', 'gk', 'parapraph', 'Graztevski', 'stuid', 'facid', "'sint", "'Heffington", "'Joint", 'authorder', 'Spitzer', 'browswers', "'Rainbow", 'GPAs', 'attendances', 'Brander', "'American", 'arrears', "'Paid", "'Meaghan", 'incur', 'Gatwick', 'Szymon', '15000', 'interchanges', 'unitprice', 'forename', "'Friendly", '57.5', 'contaSELECT', 'useracct', 'X3', 'Derricks', '20.0', 'Abdoulaye', 'Ernser', 'A340-300', 'retailing', 'mose', "'GT", 'mib', 'mp4', 'Feil', "'Armani", '70174', 'blockfloor', 'enrolment', 'Naegeli', 'donator', 'username', 'seq', "'Grondzeiler", "'King", 'non-Catholic', 'durations', "'Smithson", 'songid', 'MADLOCK', 'dno', "'Vincent", 'fullname', 'prescribes', '300000', 'Midshipman', 'Ananthapuri', 'hight', 'billing_state', 'wifi', 'petid', 'Mergenthaler', 'Badlands', 'Katsuhiro', 'appelations', 'hse', '140000', '2192', "'Wisconsin", "'omnis", 'transcripts', 'abbreviations', 'countryname', 'Bonao', 'Porczyk', 'longest-running', 'browsers', 'LORIA', 'mailing', 'NABOZNY', 'Americano', 'hrs', '4.6', 'product_ids', "'Amisulpride", 'Chiltern', "'Morocco", 'bookings', 'Latte', 'Lohaus', 'clubdesc', "'Lynne", "'Schmidt", 'he/she', 'Peeters', 'Lockmanfurt', '10000000', 'Thiago', "'Korea", 'distributer', 'occupancy', 'ycard', 'USPS', 'Julianaside', "'Treasury", 'Motta', 'eid', 'pcp', 'FJA', 'Deckow', 'donators', 'roomid', 'Andaman', "'Marriage", 'maxoccupancy', '900.0', '94002', '15,000', 'Rebeca', "'Cancelled", 'Friesen', '18:27:16', 'indepyear', 'isava', 'teh', 'Lamberton', 'amerindian', '571', 'personfriend', 'McGranger', 'Fedex', 'tryouts', 'tolls', 'Khanewal', "'Welcome", 'billing_city', 'nicknames', 'bluetooth', 'Metallica', 'CCTV', 'HSBC', 'sumbitted', 'catnip', 'artisits', '0.99', 'Miramichi', 'roomtype', 'Vietti', 'prerequisites', 'Painless', 'synthase', 'Mariusz', '23:51:54', 'gpa', '1989-09-03', 'oth', '3452', "'intern", 'R-22', 'titils', 'lastname', 'countrylanguage', "'Electoral", 'hometowns', 'PUR', 'authorize', 'Smithson', "n't", 'dphone', "'ee", 'Leonie', 'Fearsome', 'dictinct', 'MARROTTE', 'Giuliano', 'Carribean', '2003-04-19', 'circuitid', 'Heathrow', 'studnets', 'agility', 'Geovannyton', 'fld', 'Recluse', 'pertains', 'Teqnology', '2007-12-25', 'mades', '2002-06-21', 'appointmentid', 'constructorid', "'Deleted", 'openning', 'Fami', 'HBS', 'Meaghan', 'comptroller', 'employe', 'train_number', 'ay', "'Paper", 'Ryley', 'cname', 'emailstanley.monahan', 'Bushey', 'Alloway', 'Janess', "'Orbit", 'Vat', 'statments', 'lexicographic', "'s", 'procucts', 'Melching', 'expectancy', 'descriptrion', 'locaton', 'Jone', 'enrolling', 'refund', 'gname', 'Delete', 'hbp', '30000', 'canoeing', 'code2', '5200', "'love", 'partitionid', 'porphyria', '957', 'AKW', "'ALA", 'Brenden', 'edispl', 'goalies', '180cm', 'Kertzmann', "'Olympus", 'departures', "'Alabama", 'hh', 'appellation', 'role_description', 'SWEAZY', 'appelation', 'AirCon', 'University-Channel', 'Karson', 'showtimes', 'Siudym', 'donoator', 'party_events', 'flied', 'lname', "'senior", 'wineries', 'Aerosmith', 'Erdman', 'alphabetically', 'Duplex', 'Furman', '1121', 'Jandy', 'estimations', 'CHRISSY', 'tonnage', '1976-01-01', 'mf', 'train_name', 'eg', 'Gerhold', "'North", 'checkout', 'Ph.D.', 'chargeable', '242518965', "'AIK", 'Citys', 'hanyu', "'activator", 'playlist', 'flax', "'Lake", 'appellations', 'Gruber', 'Gehling', 'dribbling', 'Keeling', 'amenid', 'VIDEOTAPE', 'gradeconversion', '_attendance', 'MySakila', 'num', "'Donceel", 'hiredate', 'CIS-220', 'clublocation', 'Fosse', 'LON', 'McEwen', 'gradepoint', 'Exp', "'Kenyatta", 'constructors', 'Beege', 'yongest', 'isofficial', 'gameid', 'bandmate', 'SELBIG', '3.8', 'shools', '10018', 'contid', 'Wnat', 'prescribe', '1.84', "'Catering", '8000', '(millions)', 'birthdate', 'work_types', 'invoices', 'Ellsworth', 'airportname', "'West", 'cmi', "'2017-06-19", 'prescriptions', 'Ottilie', '3500', 'MasterCard', "'Provisional", 'Unbound', 'mins', 'Olin', 'citizenships', 'Cobham', 'mfu', '1000000', 'sleet', "'international", 'resname', 'Wihch', 'genders', 'gtype', "'Virginia", 'tweets', 'pitstops', 'powertrain', 'player-coach', 'receipt_date', 'pommel', 'shaff', 'desc', 'Tillman', 'TMobile', 'gradepoints', 'Kohler', 'prodcuts', 'raceid', '737-800', 'titleed', 'batters', 'Jaskolski', "'Lasta", 'url', 'pettype', 'BETTE', 'src', 'bedtype', '60000', 'first-grade', 'Sawayn', 'left-handed', '636', 'invoicedate', 'example.com', "'Kelly", 'f2000', 'visibilities', 'parites', 'departmentid', 'staystart', 'authorizing', "'Dr", 'maximim', 'detentions', 'Third-rate', "'t", 'rem', "'Unsatisfied", 'Paucek', "'Sponsor", 'fnol', 'from-date', 'cumin', 'Eadie', 'paragraphs', 'Rodrick', 'MTW', 'Fujitsu', 'TARRING', "'robe", 'Anguila', "'Baldwin", 'comptrollers', 'Lubowitz', 'highschooler', 'Gleasonmouth', 'Beatrix', "'Lupe", 'gymnasts', 'Bangla', "'International", 'EVELINA', 'allergytype', 'sportsinfo', 'Zalejski', 'dpi', 'divergence', 'accout', 'q2', 'expires', 'mpg', '6862', 'sqlite', 'playl', "'1989-04-24", 'ASY', 'Fahey', 'budgeted', 'Comp', "'SF", 'Akureyi', 'toal', 'Kamila', "'Boston", 'aircrafts', '37.4', "'HMS", 'wel', "'Aripiprazole", 'lived-in', 'GOLDFINGER', 'poeple', 'Ueno', 'Lyla', 'Taizhou', '8.5', 'TRACHSEL', 'Wyman', 'climber', 'service_id', 'pct', 'dob', 'constructor', 'address2', 'mediatype', 'service_details', 'goalie', 'vat', 'alid', '2010-01-01', 'MPEG', 'forenames', 'yn', "'Close", "'Sigma", 'descriptio', "'1989-03-16", 'Feest', 'Krystel', 'dateundergoes', 'headofstate', 'bandmates', 'food-related', 'appt', 'releasedate', 'q3', 'restypename', 'KAWA', '!=', 'seatings', 'student_id', 'Moulin', 'prereq', "'Miami", 'registrations', 'baseprice', 'minit', 'lifespans', 'low_temperature', '8741', 'dname', "'Noel", 'oncall', 'Aniyah', "'Summer", 'Dr.', 'Prity', '918', 'statment', '3b', 'Bootup', 'there？', 'mkou', 'cust', 'actid', 'Goldner', 'pid', 'Koby', 'eius', 'clubname', 'occurances', 'asessment', 'shp', 'KLR209', 'datetime', 'CProxy', 'Daan', 'schooler', 'manufacte', 'Sonoma', 'market-rate', 'coasters', 'CACHEbox', 'sponser', 'body_builder', 'PHL', 'surfacearea', "'inhibitor", 'winning-pilots', 'Knolls', '07:13:53', 'Ekstraklasa', '621', 'memberships', 'Acknowledgement', 'sourceairport', 'balances', 'asc', 'edu', 'Aruba', 'Triton', 'Waterbury', 'Gorgoroth', 'statuses', 'Abilene', 'Woodroffe', 'gamesplayed', 'Turcotte', "'GV", 'furniture_id', 'duplicates', 'Monadic', 'OK，give', "'activitor", 'milliseconds', "'Aberdare", 'payed', 'divison', 'example.org', "'Jessie", 'Toure', '09:00:00', 'templates', '1986-11-13', 'AHD', "'Auto", 'right-footed', "'Express", 'Atsushi', 'arears', 'descendingly', 'right-handed', 'suppler', 'lecturers', 'Feliciaberg', 'private/public', '13,000', 'party_event', 'Rylan', 'tutors', 'postalcode', 'PU_MAN', 'custmers', "'Tabatha", "'1986-08-26", '9000', 'customer_type_code', "'Yes", 'allergies', 'QM-261', 'Guruvayur', 'confer', "'Prof", 'highshcool', 'ssn', 'Elnaugh', 'MK_MAN', '4500', '100.0', 'instructs', 'idp', 'Adivisor', 'game1', 'airportcode', "'225", "'NY", 'distinctness', 'eliminations', 'Ohh', 'adresses', 'expectancies', '563', 'perpetrator？', 'csu', 'omim', 'Despero', 'left-footed', "'Vivian", 'filename', 'fourth-grade', '8000000', 'GELL', 'flightno', 'unreviewed', "'Glenn", 'URLs', 'buildup', 'ACCT-211', 'datatypes', 'lat', 'perpetrator', '100000', 'Payam', 'Wydra', 'ht', 'horsepowers', 'apid', "'Kaloyan", 'init', 'Z520e', '900000', 'Zieme', 'jobcode', '190cm', 'Kolob', 'staffs', '42000', 'PPT', 'Tokohu', 'primary_conference', 'CTO', 'Ebba', 'tryout', "'re", 'avg', 'ExxonMobil', 'Kuhn', 'custid', "'Government", '4560596484842', '1975-01-01', 'ibb', '80000', 'coupons', 'Cleavant', 'flno', 'zipcode', 'ihsaa', '4985.0', 'Oops', "'English", 'oxen', "'Miss", 'Harford', 'Bosco', 'hanzi', 'uid', 'bname', 'ALAMO', '18000', 'piad', '94107', 'dst', 'inst', 'problem_logs', 'checkin', 'birthdays', "'Denesik", 'reflexes', 'tweet', "'Graph", 'lifeexpectancy', 'enrico09', "'Cargo", 'catalog_publisher', "'Organizer", '20000', 'Heilo', 'Nameless', 'Gelderland', 'majoring', 'wrau', "'Homeland", 'fname', "'Order", 'rentals', "'Evalyn", 'OTHA', 'laptimes', "'Matter", 'A4', 'montly', 'freinds', 'Fasterfox', 'three-year', 'crs', 'highschoolers', 'login', 'wl', 'Jolie', 'D21', 'ONDERSMA', 'St.', '2016-03-15', '94103', 'objectnumber', 'governmentform', 'Langosh', "'Monaco", 'roomnumber', 'tot', "'Tony", "'Canadian", 'Birtle', 'Falls/Grand-Sault', 'undergraduates', 'ids', "'PPT", 'socre', 'maxium', 'voluptatem', 'multiracial', '20:49:27', "'UAL", 'Cyberella', "'Soisalon", 'deparments', 'manged', 'GT-I9300', 'Lysanne', '634', 'Heaney', '12000', 'Acua', '10000', 'SSN', 'Jeramie', 'AAC', 'ATO', "'Book", 'gmail.com', 'mascots', 'postcode', 'problem_log', 'mailshot', 'interacts', "'Protoporphyrinogen", "'Private", 'billing_country', '564', 'pname', 'GPA', 'schoolers', 'Amersham', 'HKG', 'climbers', "'Tax", 'yearid', "'Tournament", '4500000', "'Robel-Schulist", 'primaryaffiliation', 'Robel', '4000000', 'NEB', 'constructorstandings', 'destairport', 'CVO', "'CA", 'countryid', 'volleys', "'Hey", 'teachest', 'county_ID', 'Blackville', 'indepdent', 'semesters', 'tweeted', 'evaluations', 'X5', 'Dayana', "'BK", 'GNP', 'fax', 'Thesisin', '200000', "'Foot", 'Ohori', 'laargest', 'amenity', 'Goodrich', 'Eau', "'Marina", 'substring', 'Sydnie', 'Rosalind', '91.0', 'blockcode', "'working", 'Farida', 'Jetblue', 'renting', '``', '2009-01-01', 'dormid', "'Tropical", 'totalenrollment', 'market_rate', 'dlocation', 'Medhurst', 'mediatypeid', 'DRE', "'University", 'Kerluke', 'driverid', "'Moving", 'shareholding', 'lf', "'Toubkal", "'APG", 'prerequisite', "'AIB", 'JPMorgan', 'detial', 'Alyson', 'overpayments', "'Lettice", '841', 'Powierza', "'Moulin", '15:06:20', 'LEIA', 'Puzzling', 'eash', 'sportname', 'Generalize', 'tourney', 'payable', '93000', '2018-03-17', 'haing', 'mailed', 'mailshots', 'WY', 'Binders', 'entry_name', 'Shieber', 'playlists', 'MOYER', 'Kapitan', '5000000', '5600', 'abbrev'}
+
 
 
 '''
