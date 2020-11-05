@@ -10,12 +10,22 @@ import pickle
 
 class DataSetConfig(object):
     def __init__(self, args):
+        self.use_keywords = True
+        self.keywords_ori = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
+                     '+', '/']
+        self.keywords = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between', '-',
+                     '+', '/']
         self.max_length = {
             'sql': args.sql_len,
             'utter': args.utter_len,
             'db': args.db_len,
             'turn': args.turn_num,
             'table': args.max_table,
+            'keyword': 75,
             'de_utter': args.utter_len,
             'de_sql': args.decode_length
         }
@@ -42,12 +52,22 @@ class DefaultConfig(object):
     use_gpu = True  # user GPU or not
     gpu_id = 0
     use_max_length = True
+    use_keywords = True
+    keywords_ori = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
+                     '+', '/']
+    keywords = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between', '-',
+                     '+', '/']
     max_length = {
         'sql': 65,
         'utter': 30,
         'db': 300,
         'turn': 6,
         'table': 26,
+        'keyword': 75,
         'de_sql': 65,
         'de_utter': 30
     }

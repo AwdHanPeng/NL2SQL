@@ -1,11 +1,20 @@
 import warnings
 
-
+# 将关键词替换为自然单词
 class DefaultConfig(object):
     # seed = 3435
     # num_epochs = 100
     # use_gpu = True  # user GPU or not
     # gpu_id = 0
+    use_keywords = True
+    keywords_ori = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
+                     '+', '/']
+    keywords = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between', '-',
+                     '+', '/']
     use_max_length = True
     max_length = {
         'sql': 65,
@@ -13,6 +22,7 @@ class DefaultConfig(object):
         'db': 300,
         'turn': 6,
         'table': 26,
+        'keyword': 75,
         'de_sql': 65,
         'de_utter': 30
     }
