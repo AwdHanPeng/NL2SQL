@@ -91,6 +91,7 @@ class Model(nn.Module):
         self.base_model = args.base_model
         self.use_signal = args.use_signal
         self.embedding_matrix_random = args.embedding_matrix_random
+        self.last_db_feature = args.last_db_feature
 
     def create_pre_turn_embedding(self, data):
         '''
@@ -178,15 +179,15 @@ class Model(nn.Module):
             valid_feature = turn_feature[left:right + 1, :, :]
             valid_content_mask = turn_mask[left:right + 1, :]
             if valid_feature.shape[0] < self.max_turn:
-                zero_teature = torch.zeros(
+                zero_feature = torch.zeros(
                     [self.max_turn - valid_feature.shape[0], valid_feature.shape[1], valid_feature.shape[2]]).type_as(
                     valid_feature).to(self.device)
                 zero_mask = torch.zeros(
                     [self.max_turn - valid_content_mask.shape[0], valid_content_mask.shape[1]]).type_as(
                     valid_content_mask).to(self.device)
-                turn_batch_feature.append(torch.cat((zero_teature, valid_feature), dim=0))
+                turn_batch_feature.append(torch.cat((zero_feature, valid_feature), dim=0))
                 turn_batch_content_mask.append(torch.cat((zero_mask, valid_content_mask), dim=0))
-                turn_batch_mask.append(torch.tensor([0] * len(zero_teature) + [1] * len(valid_feature)))
+                turn_batch_mask.append(torch.tensor([0] * len(zero_feature) + [1] * len(valid_feature)))
 
             else:
                 turn_batch_feature.append(valid_feature)
@@ -269,7 +270,8 @@ class Model(nn.Module):
                 # feed mulitpath attn sum into utter rnn
                 else:
                     fuse_atten_sum = self.tranform_fuse_attention(torch.cat((utter_atten_sum, sql_atten_sum), dim=-1))
-                new_utterrnn_state = self.utterance_rnn_cell(fuse_atten_sum)  # turn_num-1,utterance_rnn_output_size
+                new_utterrnn_state = self.utterance_rnn_cell(fuse_atten_sum,
+                                                             current_utterrnn_state)  # turn_num-1,utterance_rnn_output_size
                 # store current utterrnn state
                 utterrnn_state_list.append(new_utterrnn_state)
                 # update current utterrnn state
@@ -301,7 +303,7 @@ class Model(nn.Module):
 
             # and feed into decoder rnn
             new_decoder_state = self.decoder_rnn_cell(
-                fuse_embedding_state)  # (turn_batch_num, self.decoder_rnn_output_size)
+                fuse_embedding_state, current_decoder_state)  # (turn_batch_num, self.decoder_rnn_output_size)
 
             # store decoderrnn state and update current decoder state
             if self.trigger_decode_in_out_fuse:
@@ -371,12 +373,12 @@ class Model(nn.Module):
 
         return turn_encoder_feature, turn_utter_encoder_feature
 
-    def extracted_db_feature(self, turn_batch_feature, turn_batch_mask):
+    def extracted_db_feature(self, turn_batch_feature, turn_batch_mask=None):
         '''
         split db feature from transformer extractor,and fuse the mulit head feature, in order to get sql embedding
         :param turn_batch_feature: #turn,max_turn,len,hidden
         :param turn_batch_mask: #turn,max_turn,
-        :return:# turn-1,db_len,hidden
+        :return:# turn,db_len,hidden
         '''
         turn_batch_db_feature = turn_batch_feature[:, :, :self.db_len, :]  # turn,max_turn,db_len,hidden
         # turn_batch_mask = turn_batch_mask.unsqueeze(-1).unsqueeze(-1)
@@ -392,6 +394,8 @@ class Model(nn.Module):
         else:
             # turn-1,db_len,hidden
             turn_batch_db_fuse_feature = torch.mean(turn_batch_db_feature, dim=-2)
+        if self.last_db_feature:
+            turn_batch_db_fuse_feature = turn_batch_db_feature[:, :, -1, :]
         return turn_batch_db_fuse_feature
 
     def built_output_dbembedding(self, turn_batch_db_fuse_feature, data):
@@ -476,7 +480,7 @@ class Model(nn.Module):
         :return: decoder_source_sql_embedding : (turn_num, self.decode_length, self.hidden)
         '''
 
-        assert len(source_sql) == db_embedding_matrix.shape[0]
+        # assert len(source_sql) == db_embedding_matrix.shape[0]
         batch_sql_embeddings = []
         for i in range(len(source_sql)):
             turn_db_embedding = db_embedding_matrix[i, :, :]
@@ -573,6 +577,8 @@ class Model(nn.Module):
                     else:
                         key_correct_step += 0
                         current_sql_is_right = False
+                # print(db_dict_list[torch.argmax(item_dist)] if torch.argmax(item_dist) < len(db_dict_list) else
+                #       self.output_keyword_embedding.dict[torch.argmax(item_dist) - len(db_dict_list)])
             if current_sql_is_right:
                 total_correct_strings += 1
 
@@ -621,6 +627,8 @@ class Model(nn.Module):
             new_turn_utter_encoder_feature.append(
                 self.attention_sum(turn_utter_encoder_feature[:, i], db_embedding_matrix))
         new_turn_utter_encoder_feature = torch.stack(new_turn_utter_encoder_feature, dim=1)  # (turn,utter_len,hidden)
+        new_turn_utter_encoder_feature = new_turn_utter_encoder_feature + turn_utter_encoder_feature
+        # new_turn_utter_encoder_feature = turn_utter_encoder_feature
         if self.embedding_matrix_random: new_turn_utter_encoder_feature = turn_utter_encoder_feature
         current_decoder_state = torch.sum(
             new_turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0), dim=1)
@@ -631,11 +639,73 @@ class Model(nn.Module):
             fuse_embedding_state = torch.cat(
                 (utter_state_weight_sum, decoder_input_sql_embedding[:, i, :]), dim=-1)
             new_decoder_state = self.decoder_rnn_cell(
-                fuse_embedding_state)
+                fuse_embedding_state, current_decoder_state)
             decoder_state_list.append(new_decoder_state)
             current_decoder_state = new_decoder_state
         decoder_state_list = torch.stack(decoder_state_list, dim=1)
         return decoder_state_list
+
+    def session_loop_forward(self, data):
+        # base model
+        turn_embedding, turn_utter_embedding = self.mulit_modal_embedding(data)
+        turn_mask, turn_utter_mask = self.create_turn_mask(data)
+
+        turn_encoder_feature, turn_utter_encoder_feature = self.feature_extractor(turn_embedding, turn_utter_embedding,
+                                                                                  turn_mask, turn_utter_mask)
+        # (turn+1,len,hidd) (turn,utter_len,hidden)
+
+        turn_num = turn_utter_encoder_feature.shape[0]
+        batch_decoder_state_list = []
+        batch_db_embedding_matrix = []
+        target_sqls = []
+        for i in range(turn_num):
+            utter_feature = turn_utter_encoder_feature[i]  # (len,hidd)
+            utter_mask = turn_utter_mask[i]
+            history_content_feature = turn_encoder_feature[0:i + 1]  # (pre_turns,len,hidd)
+            db_fuse_feature = self.extracted_db_feature(history_content_feature.unsqueeze(0))  # (1,db_len,hidd)
+            db_embedding_matrix, db_dict_list = self.built_output_dbembedding(db_fuse_feature,
+                                                                              data)  # (1,db_units_num,hidden)
+            new_db_list = []
+            for unit in db_dict_list:
+                token_list = unit.split()
+                while len(token_list) <= 5: token_list.append('[PAD]')
+                while len(token_list) >= 5: token_list.pop()
+                new_db_list.append(token_list)
+            db_embedding_matrix = self.input_embedding.parse_batch_content(new_db_list, 'content')
+            db_embedding_matrix = self.tranform_layer(db_embedding_matrix.mean(-2))
+            batch_db_embedding_matrix.append(db_embedding_matrix.squeeze(0))
+            source_sql, target_sql = data[i]['sql1'], data[i]['sql2']
+            target_sqls.append(target_sql)
+            decoder_input_sql_embedding = self.lookup_from_dbembedding(db_embedding_matrix.unsqueeze(0), db_dict_list,
+                                                                       [source_sql])
+            # (1, self.decode_length, self.hidden)
+            new_utter_feature = []
+            for step_feature in utter_feature:
+                new_utter_feature.append(
+                    self.attention_sum(step_feature.unsqueeze(0), db_embedding_matrix.unsqueeze(0)).squeeze(0))
+            new_utter_feature = torch.stack(new_utter_feature, dim=0) + utter_feature
+
+            current_decoder_state = torch.sum(new_utter_feature.masked_fill(utter_mask.unsqueeze(-1) == 0, 0.0),
+                                              dim=0)  # hidden
+            decoder_state_list = []
+            for i in range(self.decode_length):
+                utter_state_weight_sum = self.attention_sum(current_decoder_state.unsqueeze(0),
+                                                            new_utter_feature.unsqueeze(0),
+                                                            mask=utter_mask.unsqueeze(0)).squeeze(0)  # hidden
+                fuse_embedding_state = torch.cat(
+                    (utter_state_weight_sum, decoder_input_sql_embedding[0, i, :]), dim=-1)
+                new_decoder_state = self.decoder_rnn_cell(
+                    fuse_embedding_state.unsqueeze(0), current_decoder_state.unsqueeze(0)).squeeze(0)
+                decoder_state_list.append(new_decoder_state)
+                current_decoder_state = new_decoder_state
+            decoder_state_list = torch.stack(decoder_state_list, dim=0)  # len,hidden
+            batch_decoder_state_list.append(decoder_state_list)
+        batch_decoder_state_list = torch.stack(batch_decoder_state_list, dim=0)
+        batch_db_embedding_matrix = torch.stack(batch_db_embedding_matrix, dim=0)
+        # (bs, decoder_len, keyword_num+db_unit_num)
+        final_prob_dist = self.output_prob(batch_decoder_state_list, batch_db_embedding_matrix)
+        loss_pack = self.caculate_loss(target_sqls, final_prob_dist, db_dict_list)
+        return loss_pack
 
     def forward(self, data):
         '''
@@ -677,6 +747,17 @@ class Model(nn.Module):
 
         # get source sql and target sql text sequence
         source_sql, target_sql = [item['sql1'] for item in data], [item['sql2'] for item in data]
+
+        # new db matrix
+        new_db_list = []
+        for unit in db_dict_list:
+            token_list = unit.split()
+            while len(token_list) <= 5: token_list.append('[PAD]')
+            while len(token_list) >= 5: token_list.pop()
+            new_db_list.append(token_list)
+        db_embedding_matrix = self.input_embedding.parse_batch_content(new_db_list, 'content')
+        db_embedding_matrix = self.tranform_layer(db_embedding_matrix.mean(-2)).repeat(len(source_sql), 1,
+                                                                                       1)  # 2*85*hidden
 
         # convert source sql into embedding using extracted db feature and keyword embedding lookup table
         decoder_input_sql_embedding = self.lookup_from_dbembedding(db_embedding_matrix, db_dict_list, source_sql)
