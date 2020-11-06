@@ -147,7 +147,7 @@ def train():
                         help="fuse mulit db feature use concat or add")
 
     # model debug
-    parser.add_argument("--tiny_dataset", type=bool, default=True, help="use 200 sample to debug")
+    parser.add_argument("--tiny_dataset", type=bool, default=False, help="use 200 sample to debug")
     parser.add_argument("--warmup", type=bool, default=False, help="warmup or not")
     parser.add_argument("--grad_clip", type=bool, default=False, help="grad clip or not")
     parser.add_argument("--hard_atten", type=bool, default=True, help="Avoid [0]*N mask, still get a sum")
@@ -157,7 +157,7 @@ def train():
     parser.add_argument("--key_file_init", type=bool, default=False, help="read embedding file to init key embedding")
     parser.add_argument("--utter_fuse", type=bool, default=True, help="fuse utter during decode step")
     parser.add_argument("--three_fuse", type=bool, default=True, help="fuse utter and sql, except db in decode step")
-    parser.add_argument("--base_model", type=bool, default=False, help="base model")
+    parser.add_argument("--base_model", type=bool, default=True, help="base model")
     parser.add_argument("--use_signal", type=bool, default=True, help="use siganl or not")
     parser.add_argument("--embedding_matrix_random", type=bool, default=False, help="embedding_matrix_random")
     parser.add_argument("--last_db_feature", type=bool, default=False, help="just use one turn's db feature")

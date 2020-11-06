@@ -196,6 +196,7 @@ class ATIS_DataSetLoad():
         self.qika = 'qika'
         self.opt = opt
         self.keywords = opt.keywords
+        self.max_length = None
         self.atis = ATISDataset(opt)
         self.train_ori = self.atis_leach(self.atis.train_data.examples)
         self.valid_ori = self.atis_leach(self.atis.valid_data.examples)
@@ -206,6 +207,8 @@ class ATIS_DataSetLoad():
         # 如果自定义最大长度则覆盖
         if opt.use_max_length:
             self.max_length = opt.max_length
+            self.train_ori = self.atis_leach(self.atis.train_data.examples)
+            self.valid_ori = self.atis_leach(self.atis.valid_data.examples)
 
         # 生成数据DataSet
         self.train = DataLoad(self.max_length, self.train_ori)
@@ -222,7 +225,10 @@ class ATIS_DataSetLoad():
         dataset_leach = []
         for item in dataset:
             leach = {}
-            schema = self.read_database(item.schema.table_schema)
+            if self.max_length != None:
+                schema = self.read_database(item.schema.table_schema, self.max_length['db'])
+            else:
+                schema = self.read_database(item.schema.table_schema)
             leach['schema'] = item.schema
             leach['split_database'] = schema
             # leach['database_id'] = schema.table_schema['db_id']
@@ -257,54 +263,6 @@ class ATIS_DataSetLoad():
                 table = ''
                 column_id = schema.column_names_surface_form_to_id[item]
                 column = schema.column_names_embedder_input[column_id]
-                if column == ' . *' or column == '* . *' or column == '. *' or column == '*.*':
-                    print(column)
-                if column not in column_to_loc.keys():
-                    print(column)
-                '''
-                cut = 0
-                for letter in item:
-                    if letter == '.':
-                        table = item[:cut]
-                        column = item[(cut + 1):]
-                    cut += 1
-                table = table.lower()
-                column = column.lower()
-                # 将original的替换成新的
-                for index in range(len(tables_ori)):
-                    if tables_ori[index].lower() == table and tables[index].lower() != table:
-                        table = tables[index].lower()
-                        break
-                for index in range(len(columns_ori)):
-                    table_index = columns_ori[index][0]
-                    table_compare = tables[table_index].lower()
-                    if columns_ori[index][1].lower() == column and columns[index][
-                        1].lower() != column and table == table_compare:
-                        column = columns[index][1].lower()
-                        break
-                table_0 = re.split('[ _]', table.lower())
-                column_0 = re.split('[ _]', column.lower())
-                table = []
-                column = []
-                for item in column_0:
-                    if item == '*':
-                        column += item
-                    else:
-                        column += wordninja.split(item)
-                for item in table_0:
-                    if item == '*':
-                        table += item
-                    else:
-                        table += wordninja.split(item)
-                # 给出source样式
-                split_word = ''
-                for word in table:
-                    split_word += word + ' '
-                split_word += '. '
-                for word in column:
-                    split_word += word + ' '
-                split_word = split_word[:-1]
-                '''
                 source.append(column)
                 column_list = re.split('[ _]', column.lower())
                 content += column_list
@@ -355,19 +313,23 @@ class ATIS_DataSetLoad():
 
     # 读取数据库并将每个数据库内表与列添加seq表示法，按[表1,[表1内的列],表2,[表2内的列],...]排列，
     # 表的表示前附加<table>符号，列的表示前附加<column>符号
-    def read_database(self, table_schema):
+    def read_database(self, table_schema, max_length_db=-1):
         db_id = table_schema['db_id']
         split_database = {'id': db_id, 'tokens': [], 'db_signal': [], 'modality_signal': [], 'temporal_signal': []}
         table_num = 0
         table = ''
         table_to_loc = {'': []}
-        column_to_loc = {'*': [[], [1]]}
+        column_to_loc = {'*': [[], [1]], '* . *': [[1], [1]]}
         for column in table_schema['column_names']:
             if column[0] >= table_num:
                 # 加入当前一系列column对应的table
                 table = table_schema['table_names'][table_num].lower()
                 split_table = re.split('[ _]', table)
                 table_num += 1
+                # 判断当database长度超过最大长度时停止添加
+                if max_length_db>-1 and (len(split_database['tokens'])+len(split_table)) >= max_length_db-1:
+                    print("db too long!,", len(split_database['tokens']), "+", split_table, ">=", max_length_db-1)
+                    break
                 split_database['tokens'] += ['[SEP]']
                 begin = len(split_database['tokens'])
                 split_database['tokens'] += split_table
@@ -387,14 +349,10 @@ class ATIS_DataSetLoad():
                 assert begin + len(table_to_loc[table]) == len(split_database['tokens'])
             # 处理column
             split_column = re.split('[ _]', column[1].lower())
-            '''
-            split_column = []
-            for item in split_column_0:
-                if item == '*':
-                    split_column += item
-                else:
-                    split_column += wordninja.split(item)
-            '''
+            # 判断当database长度超过最大长度时停止添加
+            if max_length_db>-1 and (len(split_database['tokens'])+len(split_column)) >= max_length_db-1:
+                print("db too long!,", len(split_database['tokens']), "+", split_column, ">=", max_length_db-1)
+                break
             split_database['tokens'] += ['[SEP]']
             begin = len(split_database['tokens'])
             split_database['tokens'] += split_column
