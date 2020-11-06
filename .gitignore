@@ -7,3 +7,4 @@
 *.xml
 .json
 /__pycache__
+/bert

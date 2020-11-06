@@ -3,6 +3,7 @@ import torch.nn as nn
 from .embedding import InputEmbedding, OutputEmbedding
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 import torch
+import time
 
 
 class Model(nn.Module):
@@ -226,13 +227,9 @@ class Model(nn.Module):
         turn_batch_num = turn_batch_feature.shape[0]
 
         # we get last utter sum to init the first hidden state of decoder rnn
-        # current_decoder_state = torch.zeros(turn_batch_num, self.decoder_rnn_output_size)
-        turn_utter_feature_mask = turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0)
-
-
         current_decoder_state = torch.sum(
             turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0), dim=1).div(
-                turn_utter_mask.sum(dim=-1).float().unsqueeze(-1))
+            turn_utter_mask.sum(dim=-1).float().unsqueeze(-1))
 
         rever_turn_batch_feature = torch.flip(turn_batch_feature, dims=[1])  # reverse for utterance rnn
         rever_turn_batch_content_mask = torch.flip(turn_batch_content_mask, dims=[1])  # reverse for content mask
@@ -243,8 +240,7 @@ class Model(nn.Module):
             # we set utterance_rnn_output_size == hidden, so no need to convert dim
             current_utterrnn_state = torch.sum(
                 turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0), dim=1).div(
-                    turn_utter_mask.sum(dim=-1).float().unsqueeze(-1))
-            
+                turn_utter_mask.sum(dim=-1).float().unsqueeze(-1))
 
             utterrnn_state_list = []
             for j in range(self.max_turn):
@@ -399,11 +395,15 @@ class Model(nn.Module):
             turn_batch_db_fuse_feature = self.tranform_fuse_db_feature(turn_batch_db_fuse_feature)
         else:
             # turn-1,db_len,hidden
-            turn_batch_db_fuse_feature = torch.mean(turn_batch_db_feature, dim=-2)
+            # added pad ignore mean
+            turn_batch_db_fuse_feature = torch.sum(
+                turn_batch_db_feature.masked_fill(turn_batch_mask.unsqueeze(-2).unsqueeze(-1) == 0, 0.0),
+                dim=-2).div(
+                turn_batch_mask.sum(dim=-1).unsqueeze(-1).unsqueeze(-1))
         if self.last_db_feature:
             turn_batch_db_fuse_feature = turn_batch_db_feature[:, :, -1, :]
         return turn_batch_db_fuse_feature
-    
+
     def built_output_dbembedding_unit(self, turn_batch_db_fuse_feature, data):
         '''
         convert turn_batch_db_fuse_feature into a embedding lookup table whose size is (# turn-1,real_db_len,hidden)
@@ -417,7 +417,7 @@ class Model(nn.Module):
             # (turn-1,hidden)
             features = torch.stack([turn_batch_db_fuse_feature[:, idx, :] for idx in idxs], dim=1)
             return features.mean(dim=-2)
-        
+
         def fuse_table_on_column(table_embedding, column_embedding):
             # fuse table embedding into column embedding to enhance column expression
             output, h_n = self.table_column_fuse_rnn(
@@ -432,7 +432,7 @@ class Model(nn.Module):
         embedding_matrix = []
         old_table_list = []
         table_feature = 0
-        for idx, (name,value) in enumerate(dict_name_list.items()):
+        for idx, (name, value) in enumerate(dict_name_list.items()):
             dict_list.append(name)
             table_list = dict_name_list[name][0]
             column_list = dict_name_list[name][1]
@@ -775,24 +775,36 @@ class Model(nn.Module):
         column4table -> int list for merge table/column expression
         :return: loss sum and loss list
         '''
-
+        ticks = time.time()
         # mulit modal for content and last utterance
         turn_embedding, turn_utter_embedding = self.mulit_modal_embedding(data)
         # (turn+1,len,hidd) (turn,utt_len,hidd)
 
+        print('1', time.time() - ticks)
+        ticks = time.time()
+
         turn_mask, turn_utter_mask = self.create_turn_mask(data)
         # (turn+1,len) (turn,utter_len)
+
+        print('2', time.time() - ticks)
+        ticks = time.time()
 
         # use transformer block to extract feature for content and utterance
         turn_encoder_feature, turn_utter_encoder_feature = self.feature_extractor(turn_embedding, turn_utter_embedding,
                                                                                   turn_mask, turn_utter_mask)
         # (turn+1,len,hidd) (turn,utter_len,hidden)
 
+        print('3', time.time() - ticks)
+        ticks = time.time()
+
         # split original content turn sequence into mulit session samples
 
         turn_batch_feature, turn_batch_mask, turn_batch_content_mask = self.create_turn_batch(turn_encoder_feature,
                                                                                               turn_mask)
         # (turn,max_turn,len,hidden) # (turn,max_turn) # (turn,max_turn,len)
+
+        print('4', time.time() - ticks)
+        ticks = time.time()
 
         # split db feature from transformer extractor, in order to get sql embedding
         # (turn,max_turn,len,hidden) -> (turn,max_turn,db_len,hidden) -> (turn,db_len,hidden)
@@ -802,32 +814,28 @@ class Model(nn.Module):
         # db_embedding_matrix, db_dict_list = self.built_output_dbembedding(turn_batch_db_fuse_feature, data)
         # (turn,db_units_num,hidden)  [db_unit]*db_units_num
 
+        print('5', time.time() - ticks)
+        ticks = time.time()
+
         # bulid db embedding dict by db_unit
-        db_embedding_matrix, db_dict_list, db_dict_loc = self.built_output_dbembedding_unit(turn_batch_db_fuse_feature, data)
+        db_embedding_matrix, db_dict_list, db_dict_loc = self.built_output_dbembedding_unit(turn_batch_db_fuse_feature,
+                                                                                            data)
+
+        print('6', time.time() - ticks)
+        ticks = time.time()
 
         # get source sql and target sql text sequence
         source_sql, target_sql = [item['sql1'] for item in data], [item['sql2'] for item in data]
 
-        '''
-        # new db matrix
-        new_db_list = []
-        for unit in db_dict_list:
-            token_list = unit.split()
-            while len(token_list) <= 5: token_list.append('[PAD]')
-            while len(token_list) >= 5: token_list.pop()
-            new_db_list.append(token_list)
-        db_embedding_matrix = self.input_embedding.parse_batch_content(new_db_list, 'content')
-        db_embedding_matrix = self.tranform_layer(db_embedding_matrix.mean(-2)).repeat(len(source_sql), 1,
-                                                                                       1)  # 2*85*hidden
-        '''
+        print('7', time.time() - ticks)
+        ticks = time.time()
 
         # convert source sql into embedding using extracted db feature and keyword embedding lookup table
         decoder_input_sql_embedding = self.lookup_from_dbembedding(db_embedding_matrix, db_dict_list, source_sql)
         # (turn_num, self.decode_length, self.hidden)
 
-        if self.embedding_matrix_random:
-            # just use a randn matrix for debug
-            db_embedding_matrix = torch.randn(*db_embedding_matrix.shape).to(self.device)
+        print('8', time.time() - ticks)
+        ticks = time.time()
 
         if not self.base_model:
             # tow level decode for turn feature, last utterance and source sql
@@ -838,9 +846,17 @@ class Model(nn.Module):
         else:
             turn_batch_final_feature = self.base_encoder(turn_utter_encoder_feature, turn_utter_mask,
                                                          decoder_input_sql_embedding, db_embedding_matrix)
+
+        print('9', time.time() - ticks)
+        ticks = time.time()
+
         # convert final feature into dist, which length is (db units num + keywords num)
         # (turn_num, decoder_len, keyword_num+db_unit_num)
         final_prob_dist = self.output_prob(turn_batch_final_feature, db_embedding_matrix)
+
+        print('10', time.time() - ticks)
+        ticks = time.time()
+
         loss_pack = self.caculate_loss(target_sql, final_prob_dist, db_dict_list)
 
         return loss_pack
