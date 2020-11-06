@@ -227,8 +227,12 @@ class Model(nn.Module):
 
         # we get last utter sum to init the first hidden state of decoder rnn
         # current_decoder_state = torch.zeros(turn_batch_num, self.decoder_rnn_output_size)
+        turn_utter_feature_mask = turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0)
+
+
         current_decoder_state = torch.sum(
-            turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0), dim=1)
+            turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0), dim=1).div(
+                turn_utter_mask.sum(dim=-1).float().unsqueeze(-1))
 
         rever_turn_batch_feature = torch.flip(turn_batch_feature, dims=[1])  # reverse for utterance rnn
         rever_turn_batch_content_mask = torch.flip(turn_batch_content_mask, dims=[1])  # reverse for content mask
@@ -238,7 +242,9 @@ class Model(nn.Module):
             # current_utterrnn_state = self.tranform_lastutter_initutterrnn(torch.sum(turn_utter_encoder_feature, dim=1))
             # we set utterance_rnn_output_size == hidden, so no need to convert dim
             current_utterrnn_state = torch.sum(
-                turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0), dim=1)
+                turn_utter_encoder_feature.masked_fill(turn_utter_mask.unsqueeze(-1) == 0, 0.0), dim=1).div(
+                    turn_utter_mask.sum(dim=-1).float().unsqueeze(-1))
+            
 
             utterrnn_state_list = []
             for j in range(self.max_turn):
@@ -397,6 +403,57 @@ class Model(nn.Module):
         if self.last_db_feature:
             turn_batch_db_fuse_feature = turn_batch_db_feature[:, :, -1, :]
         return turn_batch_db_fuse_feature
+    
+    def built_output_dbembedding_unit(self, turn_batch_db_fuse_feature, data):
+        '''
+        convert turn_batch_db_fuse_feature into a embedding lookup table whose size is (# turn-1,real_db_len,hidden)
+        :param turn_batch_db_fuse_feature: #(turn,db_len,hidden)
+        :param data:
+        :return:
+        '''
+
+        def get_feature_from_idxs(idxs):
+            # for a word group, we get and sum all word embedding to express this whole embedding
+            # (turn-1,hidden)
+            features = torch.stack([turn_batch_db_fuse_feature[:, idx, :] for idx in idxs], dim=1)
+            return features.mean(dim=-2)
+        
+        def fuse_table_on_column(table_embedding, column_embedding):
+            # fuse table embedding into column embedding to enhance column expression
+            output, h_n = self.table_column_fuse_rnn(
+                torch.stack([table_embedding, column_embedding], dim=0))  # 2*bs*hidden
+            output = output.mean(dim=0)  # 2,turn-1,hidden
+            # h_n = h_n.permute(1, 0, 2).reshape(h_n.shape[0], -1)  # (turn,hidden*directions)
+            # return self.tranform_fuse_column_table(h_n)  # (turn,hidden)
+            return output  # we set rnn state == hidden/2
+
+        dict_name_list = data[0]['db_unit']
+        dict_list = []
+        embedding_matrix = []
+        old_table_list = []
+        table_feature = 0
+        for idx, (name,value) in enumerate(dict_name_list.items()):
+            dict_list.append(name)
+            table_list = dict_name_list[name][0]
+            column_list = dict_name_list[name][1]
+            for item in column_list:
+                if item >= 422:
+                    print("index 422 is out of bounds for dimension 1 with size 422")
+                    print(name)
+                    print(dict_name_list[name])
+            column_feature = get_feature_from_idxs(column_list)
+            if len(table_list) == 0:
+                fuse_table_column = fuse_table_on_column(column_feature, column_feature)
+            elif old_table_list == table_list:
+                fuse_table_column = fuse_table_on_column(table_feature, column_feature)
+            else:
+                table_feature = get_feature_from_idxs(table_list)
+                old_table_list = table_list
+                fuse_table_column = fuse_table_on_column(table_feature, column_feature)
+            embedding_matrix.append(fuse_table_column)
+            assert len(dict_list) == len(embedding_matrix)
+        embedding_matrix = torch.stack(embedding_matrix, dim=1)  # (turn,db_units_num,hidden)
+        return embedding_matrix, dict_list, dict_name_list
 
     def built_output_dbembedding(self, turn_batch_db_fuse_feature, data):
         '''
@@ -742,12 +799,16 @@ class Model(nn.Module):
         turn_batch_db_fuse_feature = self.extracted_db_feature(turn_batch_feature, turn_batch_mask)
 
         # lookup from column4table and build db embedding and dict from turn_batch_db_fuse_feature
-        db_embedding_matrix, db_dict_list = self.built_output_dbembedding(turn_batch_db_fuse_feature, data)
+        # db_embedding_matrix, db_dict_list = self.built_output_dbembedding(turn_batch_db_fuse_feature, data)
         # (turn,db_units_num,hidden)  [db_unit]*db_units_num
+
+        # bulid db embedding dict by db_unit
+        db_embedding_matrix, db_dict_list, db_dict_loc = self.built_output_dbembedding_unit(turn_batch_db_fuse_feature, data)
 
         # get source sql and target sql text sequence
         source_sql, target_sql = [item['sql1'] for item in data], [item['sql2'] for item in data]
 
+        '''
         # new db matrix
         new_db_list = []
         for unit in db_dict_list:
@@ -758,6 +819,7 @@ class Model(nn.Module):
         db_embedding_matrix = self.input_embedding.parse_batch_content(new_db_list, 'content')
         db_embedding_matrix = self.tranform_layer(db_embedding_matrix.mean(-2)).repeat(len(source_sql), 1,
                                                                                        1)  # 2*85*hidden
+        '''
 
         # convert source sql into embedding using extracted db feature and keyword embedding lookup table
         decoder_input_sql_embedding = self.lookup_from_dbembedding(db_embedding_matrix, db_dict_list, source_sql)

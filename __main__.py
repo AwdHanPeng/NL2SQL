@@ -10,12 +10,23 @@ import pickle
 
 class DataSetConfig(object):
     def __init__(self, args):
+
+        self.use_keywords = False
+        self.keywords_ori = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
+                     '+', '/']
+        self.keywords = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between', '-',
+                     '+', '/']
         self.max_length = {
             'sql': args.sql_len,
             'utter': args.utter_len,
             'db': args.db_len,
             'turn': args.turn_num,
             'table': args.max_table,
+            'keyword': 75,
             'de_utter': args.utter_len,
             'de_sql': args.decode_length
         }
@@ -42,12 +53,22 @@ class DefaultConfig(object):
     use_gpu = True  # user GPU or not
     gpu_id = 0
     use_max_length = True
+    use_keywords = True
+    keywords_ori = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
+                     '+', '/']
+    keywords = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
+                     'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
+                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between', '-',
+                     '+', '/']
     max_length = {
         'sql': 65,
         'utter': 30,
         'db': 300,
         'turn': 6,
         'table': 26,
+        'keyword': 75,
         'de_sql': 65,
         'de_utter': 30
     }
@@ -85,7 +106,7 @@ def train():
     parser.add_argument("--turn_num", type=int, default=6, help="maximum turn number of dialogue")
     parser.add_argument("--max_table", type=int, default=26, help="maximum table number of dialogue")
     parser.add_argument("--decode_length", type=int, default=65, help="maximum decode step for SQL")
-    parser.add_argument("--shuffle", type=bool, default=False,
+    parser.add_argument("--shuffle", type=bool, default=True,
                         help="shuffle the train dataset")
 
     # model opts
@@ -105,6 +126,7 @@ def train():
     # trainer opts
     parser.add_argument("-e", "--epochs", type=int, default=200, help="number of epochs")
     parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false")
+    parser.add_argument("--gpu_id", type=bool, default='3', help="training gpu id")
     parser.add_argument("--log_freq", type=int, default=20, help="printing loss every n iter: setting n")
     parser.add_argument("--cuda_devices", type=int, nargs='+', default=None, help="CUDA device ids")
     parser.add_argument("--load_epoch", type=int, default=-1, help="load epoch x's model param")
@@ -125,7 +147,7 @@ def train():
                         help="fuse mulit db feature use concat or add")
 
     # model debug
-    parser.add_argument("--tiny_dataset", type=bool, default=False, help="use 10 sample to debug")
+    parser.add_argument("--tiny_dataset", type=bool, default=True, help="use 200 sample to debug")
     parser.add_argument("--warmup", type=bool, default=False, help="warmup or not")
     parser.add_argument("--grad_clip", type=bool, default=False, help="grad clip or not")
     parser.add_argument("--hard_atten", type=bool, default=True, help="Avoid [0]*N mask, still get a sum")
@@ -135,9 +157,9 @@ def train():
     parser.add_argument("--key_file_init", type=bool, default=False, help="read embedding file to init key embedding")
     parser.add_argument("--utter_fuse", type=bool, default=True, help="fuse utter during decode step")
     parser.add_argument("--three_fuse", type=bool, default=True, help="fuse utter and sql, except db in decode step")
-    parser.add_argument("--base_model", type=bool, default=True, help="base model")
+    parser.add_argument("--base_model", type=bool, default=False, help="base model")
     parser.add_argument("--use_signal", type=bool, default=True, help="use siganl or not")
-    parser.add_argument("--embedding_matrix_random", type=bool, default=False, help="use siganl or not")
+    parser.add_argument("--embedding_matrix_random", type=bool, default=False, help="embedding_matrix_random")
     parser.add_argument("--last_db_feature", type=bool, default=False, help="just use one turn's db feature")
     parser.add_argument("--session_loop", type=bool, default=False, help="session loop for debug")
     args = parser.parse_args()
@@ -145,6 +167,8 @@ def train():
     print("Loading {} Dataset".format(args.dataset))
 
     dataset_path = args.dataset_path + args.dataset + '.pkl'
+    if args.with_cuda:
+        os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
     if os.path.exists(dataset_path):
         with open(dataset_path, 'rb') as f:
@@ -164,7 +188,7 @@ def train():
 
     if args.tiny_dataset:
         print('Use Tiny Dateset')
-        train_data_loader = train_data_loader[:5]
+        train_data_loader = train_data_loader[:1000]
         test_data_loader = None
         # test_data_loader = test_data_loader[:5]
 
