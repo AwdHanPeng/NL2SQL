@@ -32,8 +32,9 @@ class PreTrainBert(nn.Module):
             data_tokens.append([self.bert_vocab.get(s, self.unk_idx) for s in item])
         data_tokens = torch.tensor(data_tokens).to(self.device)
 
-        output = self.bert(input_ids=data_tokens, attention_mask=(
-                data_tokens != self.pad_idx).int())  # self.batch_size, self.total_len, -1)
+        output = self.bert(input_ids=data_tokens,
+                           attention_mask=(data_tokens != self.pad_idx).int())  # self.batch_size, self.total_len, -1)
+        # output = self.bert(input_ids=data_tokens)
         return output[0]
 
 
@@ -66,12 +67,12 @@ class InputEmbedding(nn.Module):
         '''
         batch_size = len(batch_content)
         batch_content_embedding = self.pre_train_embedding(batch_content)
-        if type == 'content':
-            assert batch_content_embedding.shape == (batch_size, self.total_len, self.input_size)
-        elif type == 'utterance':
-            assert batch_content_embedding.shape == (batch_size, self.utter_len, self.input_size)
-        else:
-            raise Exception('InValid Type !')
+        # if type == 'content':
+        #     assert batch_content_embedding.shape == (batch_size, self.total_len, self.input_size)
+        # elif type == 'utterance':
+        #     assert batch_content_embedding.shape == (batch_size, self.utter_len, self.input_size)
+        # else:
+        #     raise Exception('InValid Type !')
         return batch_content_embedding
 
     def parse_content(self, content, type):
@@ -188,4 +189,12 @@ class OutputEmbedding(nn.Module):
 
 
 if __name__ == '__main__':
-    pass
+    from transformers import BertModel, BertTokenizer
+
+    bert = BertModel.from_pretrained('bert-base-uncased')
+    bert_vocab = BertTokenizer.from_pretrained('bert-base-uncased').get_vocab()
+    data_tokens = torch.tensor([[0, 16273, 16272, 16270], [0, 15570, 15962, 15825]])
+    pad_idx = bert_vocab.get('[PAD]')
+    print(pad_idx)
+    output = bert(input_ids=data_tokens, attention_mask=(data_tokens != pad_idx).int())
+    print(output)

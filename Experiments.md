@@ -212,7 +212,18 @@ db里边的信息太多了 很多都没有必要
 然后utter和sql之间采用最简单的seqatten模型就行decoder
 看看这样的效果如何
 
-
+尝试在简单模型上，使用权重loss
 
 
 CUDA_VISIBLE_DEVICES=5 python __main__.py --shuffle=True --tiny_dataset=True --max_turn=1
+
+2020/11/3
+实验记录：目前修复了两个大bug，一个是错位问题，一个是rnn的state
+
+使用basemodel和基础loss尝试在tiny上拟合 并且在utter表示和dbattn之后，进行了残差
+key到达0.4左右
+
+不进行utter和db的attn，也不进行残差，直接训练 key的训练貌似提升了很多
+说明db表示确实有问题
+
+去掉mask试一试 看是不是mask的问题

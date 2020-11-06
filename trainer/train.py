@@ -65,6 +65,7 @@ class Trainer:
         print("Total Bert Parameters: {}*1e6".format(sum([p.nelement() for p in self.params_bert]) // 1e6))
         self.shuffle = args.shuffle
         self.grad_clip = args.grad_clip
+        self.session_loop = args.session_loop
 
     def train(self, epoch):
 
@@ -103,7 +104,10 @@ class Trainer:
         for i, data in data_iter:
 
             # 1. forward the input and all position labels
-            loss_pack = self.model(data)
+            if self.session_loop:
+                loss_pack = self.model.session_loop_forward(data)
+            else:
+                loss_pack = self.model(data)
             db_loss, key_loss, total_step, valid_step, db_valid_step, key_valid_step, db_correct_step, key_correct_step = \
                 loss_pack['db_loss'], loss_pack['key_loss'], loss_pack[
                     'total_step'], loss_pack['valid_step'], loss_pack['db_valid_step'], loss_pack['key_valid_step'], \
@@ -112,6 +116,7 @@ class Trainer:
 
             strings_num, correct_strings_num = loss_pack['total_strings'], loss_pack['total_correct_strings']
             loss = db_loss + key_loss
+            # loss = db_loss
             # 3. backward and optimization only in train
             if train:
                 if not self.warmup:

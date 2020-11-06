@@ -10,7 +10,8 @@ import pickle
 
 class DataSetConfig(object):
     def __init__(self, args):
-        self.use_keywords = True
+
+        self.use_keywords = False
         self.keywords_ori = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
                      'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
                      'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
@@ -105,7 +106,7 @@ def train():
     parser.add_argument("--turn_num", type=int, default=6, help="maximum turn number of dialogue")
     parser.add_argument("--max_table", type=int, default=26, help="maximum table number of dialogue")
     parser.add_argument("--decode_length", type=int, default=65, help="maximum decode step for SQL")
-    parser.add_argument("--shuffle", type=bool, default=False,
+    parser.add_argument("--shuffle", type=bool, default=True,
                         help="shuffle the train dataset")
 
     # model opts
@@ -123,12 +124,13 @@ def train():
     parser.add_argument("--attn_heads", type=int, default=8, help="number of attention heads")
 
     # trainer opts
-    parser.add_argument("-e", "--epochs", type=int, default=100, help="number of epochs")
+    parser.add_argument("-e", "--epochs", type=int, default=200, help="number of epochs")
     parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false")
+    parser.add_argument("--gpu_id", type=bool, default='3', help="training gpu id")
     parser.add_argument("--log_freq", type=int, default=20, help="printing loss every n iter: setting n")
     parser.add_argument("--cuda_devices", type=int, nargs='+', default=None, help="CUDA device ids")
     parser.add_argument("--load_epoch", type=int, default=-1, help="load epoch x's model param")
-    parser.add_argument("--lr", type=float, default=1e-3, help="learning rate of adam")
+    parser.add_argument("--lr", type=float, default=1e-4, help="learning rate of adam")
     parser.add_argument("--use_bert", type=bool, default=True, help="use bert or not")
     parser.add_argument("--lr_bert", type=float, default=1e-5, help="learning rate of adam for bert")
     parser.add_argument("--fix_bert", type=bool, default=False, help="fix bert param of fine-tune")
@@ -145,7 +147,7 @@ def train():
                         help="fuse mulit db feature use concat or add")
 
     # model debug
-    parser.add_argument("--tiny_dataset", type=bool, default=False, help="use 10 sample to debug")
+    parser.add_argument("--tiny_dataset", type=bool, default=True, help="use 200 sample to debug")
     parser.add_argument("--warmup", type=bool, default=False, help="warmup or not")
     parser.add_argument("--grad_clip", type=bool, default=False, help="grad clip or not")
     parser.add_argument("--hard_atten", type=bool, default=True, help="Avoid [0]*N mask, still get a sum")
@@ -154,15 +156,19 @@ def train():
     parser.add_argument("--key_feature_init", type=bool, default=False, help="init key embedding use content feature")
     parser.add_argument("--key_file_init", type=bool, default=False, help="read embedding file to init key embedding")
     parser.add_argument("--utter_fuse", type=bool, default=True, help="fuse utter during decode step")
-    parser.add_argument("--three_fuse", type=bool, default=False, help="fuse utter and sql, except db in decode step")
-    parser.add_argument("--base_model", type=bool, default=True, help="base model")
-    parser.add_argument("--use_signal", type=bool, default=False, help="use siganl or not")
-    parser.add_argument("--embedding_matrix_random", type=bool, default=False, help="use siganl or not")
+    parser.add_argument("--three_fuse", type=bool, default=True, help="fuse utter and sql, except db in decode step")
+    parser.add_argument("--base_model", type=bool, default=False, help="base model")
+    parser.add_argument("--use_signal", type=bool, default=True, help="use siganl or not")
+    parser.add_argument("--embedding_matrix_random", type=bool, default=False, help="embedding_matrix_random")
+    parser.add_argument("--last_db_feature", type=bool, default=False, help="just use one turn's db feature")
+    parser.add_argument("--session_loop", type=bool, default=False, help="session loop for debug")
     args = parser.parse_args()
 
     print("Loading {} Dataset".format(args.dataset))
 
     dataset_path = args.dataset_path + args.dataset + '.pkl'
+    if args.with_cuda:
+        os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
     if os.path.exists(dataset_path):
         with open(dataset_path, 'rb') as f:
@@ -182,7 +188,7 @@ def train():
 
     if args.tiny_dataset:
         print('Use Tiny Dateset')
-        train_data_loader = train_data_loader[:5]
+        train_data_loader = train_data_loader[:1000]
         test_data_loader = None
         # test_data_loader = test_data_loader[:5]
 

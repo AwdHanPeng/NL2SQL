@@ -380,6 +380,10 @@ class ATIS_DataSetLoad():
                 table_to_loc[table] = [begin+i for (i,_) in enumerate(split_table)]
                 table_column = table + ' . *'
                 column_to_loc[table_column] = [table_to_loc[table], [1]]
+                for loc in table_to_loc[table]:
+                    # assert loc < 422, "越界啦！"
+                    if loc >= 422:
+                        pass
                 assert begin + len(table_to_loc[table]) == len(split_database['tokens'])
             # 处理column
             split_column = re.split('[ _]', column[1].lower())
@@ -402,6 +406,11 @@ class ATIS_DataSetLoad():
             split_database['temporal_signal'] += [-1 for i in split_column]
             table_column = table+' . '+column[1].lower()
             column_to_loc[table_column] = [table_to_loc[table], [begin + i for (i, _) in enumerate(split_column)]]
+            for item in column_to_loc[table_column]:
+                for loc in item:
+                    # assert loc < 422, "column或者table越界啦"
+                    if loc >= 422:
+                        pass
             assert begin + len(column_to_loc[table_column][1]) == len(split_database['tokens'])
         # 结尾附加SEP
         split_database['tokens'] += ['[SEP]']
