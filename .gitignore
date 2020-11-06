@@ -4,3 +4,6 @@
 *.pkl
 /runs
 .xml
+*.xml
+*.pkl
+*.pkl
