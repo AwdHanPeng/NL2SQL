@@ -6,3 +6,4 @@
 .xml
 *.xml
 .json
+/__pycache__
