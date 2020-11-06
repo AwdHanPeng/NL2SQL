@@ -189,7 +189,7 @@ def train():
 
     if args.tiny_dataset:
         print('Use Tiny Dateset')
-        train_data_loader = train_data_loader[:5]
+        train_data_loader = train_data_loader[:1000]
         test_data_loader = None
         # test_data_loader = test_data_loader[:5]
 

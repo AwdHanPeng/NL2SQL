@@ -780,22 +780,22 @@ class Model(nn.Module):
         turn_embedding, turn_utter_embedding = self.mulit_modal_embedding(data)
         # (turn+1,len,hidd) (turn,utt_len,hidd)
 
-        print('1', time.time() - ticks)
-        ticks = time.time()
+        # print('1', time.time() - ticks)
+        # ticks = time.time()
 
         turn_mask, turn_utter_mask = self.create_turn_mask(data)
         # (turn+1,len) (turn,utter_len)
 
-        print('2', time.time() - ticks)
-        ticks = time.time()
+        # print('2', time.time() - ticks)
+        # ticks = time.time()
 
         # use transformer block to extract feature for content and utterance
         turn_encoder_feature, turn_utter_encoder_feature = self.feature_extractor(turn_embedding, turn_utter_embedding,
                                                                                   turn_mask, turn_utter_mask)
         # (turn+1,len,hidd) (turn,utter_len,hidden)
 
-        print('3', time.time() - ticks)
-        ticks = time.time()
+        # print('3', time.time() - ticks)
+        # ticks = time.time()
 
         # split original content turn sequence into mulit session samples
 
@@ -803,8 +803,8 @@ class Model(nn.Module):
                                                                                               turn_mask)
         # (turn,max_turn,len,hidden) # (turn,max_turn) # (turn,max_turn,len)
 
-        print('4', time.time() - ticks)
-        ticks = time.time()
+        # print('4', time.time() - ticks)
+        # ticks = time.time()
 
         # split db feature from transformer extractor, in order to get sql embedding
         # (turn,max_turn,len,hidden) -> (turn,max_turn,db_len,hidden) -> (turn,db_len,hidden)
@@ -814,28 +814,28 @@ class Model(nn.Module):
         # db_embedding_matrix, db_dict_list = self.built_output_dbembedding(turn_batch_db_fuse_feature, data)
         # (turn,db_units_num,hidden)  [db_unit]*db_units_num
 
-        print('5', time.time() - ticks)
-        ticks = time.time()
+        # print('5', time.time() - ticks)
+        # ticks = time.time()
 
         # bulid db embedding dict by db_unit
         db_embedding_matrix, db_dict_list, db_dict_loc = self.built_output_dbembedding_unit(turn_batch_db_fuse_feature,
                                                                                             data)
 
-        print('6', time.time() - ticks)
-        ticks = time.time()
+        # print('6', time.time() - ticks)
+        # ticks = time.time()
 
         # get source sql and target sql text sequence
         source_sql, target_sql = [item['sql1'] for item in data], [item['sql2'] for item in data]
 
-        print('7', time.time() - ticks)
-        ticks = time.time()
+        # print('7', time.time() - ticks)
+        # ticks = time.time()
 
         # convert source sql into embedding using extracted db feature and keyword embedding lookup table
         decoder_input_sql_embedding = self.lookup_from_dbembedding(db_embedding_matrix, db_dict_list, source_sql)
         # (turn_num, self.decode_length, self.hidden)
 
-        print('8', time.time() - ticks)
-        ticks = time.time()
+        # print('8', time.time() - ticks)
+        # ticks = time.time()
 
         if not self.base_model:
             # tow level decode for turn feature, last utterance and source sql
@@ -847,15 +847,15 @@ class Model(nn.Module):
             turn_batch_final_feature = self.base_encoder(turn_utter_encoder_feature, turn_utter_mask,
                                                          decoder_input_sql_embedding, db_embedding_matrix)
 
-        print('9', time.time() - ticks)
-        ticks = time.time()
+        # print('9', time.time() - ticks)
+        # ticks = time.time()
 
         # convert final feature into dist, which length is (db units num + keywords num)
         # (turn_num, decoder_len, keyword_num+db_unit_num)
         final_prob_dist = self.output_prob(turn_batch_final_feature, db_embedding_matrix)
 
-        print('10', time.time() - ticks)
-        ticks = time.time()
+        # print('10', time.time() - ticks)
+        # ticks = time.time()
 
         loss_pack = self.caculate_loss(target_sql, final_prob_dist, db_dict_list)
 
