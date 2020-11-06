@@ -100,6 +100,7 @@ class Trainer:
         total_correct, db_correct, key_correct = 0, 0, 0
         total_element, total_db, total_key = 0, 0, 0
         total_strings, total_correct_strings = 0, 0
+        db_acc_num, key_acc_num, all_acc_num, all_num = 0, 0, 0, 0
 
         for i, data in data_iter:
 
@@ -142,6 +143,10 @@ class Trainer:
             total_key += key_valid_step
             total_strings += strings_num
             total_correct_strings += correct_strings_num
+            db_acc_num += db_correct_step/db_valid_step
+            key_acc_num += key_correct_step/key_valid_step
+            all_acc_num += (db_correct_step+key_correct_step)/(db_valid_step+key_valid_step)
+            all_num += 1
 
             post_fix = {
                 "epoch": epoch,
@@ -169,9 +174,9 @@ class Trainer:
                 data_iter.write(str(post_fix))
 
         print("EP%d_%s, avg_step_loss=" % (epoch, str_code), avg_loss / total_element,
-              "step_acc=", total_correct / total_element,
-              "db_acc=", db_correct / total_db, "key_acc=", key_correct / total_key)
-        return total_correct / total_element, total_correct_strings / total_strings
+              "step_acc=", all_acc_num / all_num,
+              "db_acc=", db_acc_num / all_num, "key_acc=", key_acc_num / all_num)
+        return all_acc_num / all_num, total_correct_strings / total_strings
 
     def save(self, epoch, step_acc, string_acc, file_path):
         """
