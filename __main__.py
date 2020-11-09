@@ -10,16 +10,17 @@ import pickle
 
 class DataSetConfig(object):
     def __init__(self, args):
-
         self.use_keywords = False
         self.keywords_ori = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
-                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
-                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
-                     '+', '/']
+                             'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                             'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between',
+                             '-',
+                             '+', '/']
         self.keywords = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
-                     'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
-                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between', '-',
-                     '+', '/']
+                         'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
+                         'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between',
+                         '-',
+                         '+', '/']
         self.max_length = {
             'sql': args.sql_len,
             'utter': args.utter_len,
@@ -55,13 +56,13 @@ class DefaultConfig(object):
     use_max_length = True
     use_keywords = True
     keywords_ori = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
-                     'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
-                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
-                     '+', '/']
+                    'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
+                    'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
+                    '+', '/']
     keywords = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
-                     'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
-                     'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between', '-',
-                     '+', '/']
+                'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
+                'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between', '-',
+                '+', '/']
     max_length = {
         'sql': 65,
         'utter': 30,
@@ -147,7 +148,7 @@ def train():
                         help="fuse mulit db feature use concat or add")
 
     # model debug
-    parser.add_argument("--tiny_dataset", type=bool, default=False, help="use 200 sample to debug")
+    parser.add_argument("--tiny_dataset", type=bool, default=True, help="use 200 sample to debug")
     parser.add_argument("--warmup", type=bool, default=False, help="warmup or not")
     parser.add_argument("--grad_clip", type=bool, default=False, help="grad clip or not")
     parser.add_argument("--hard_atten", type=bool, default=True, help="Avoid [0]*N mask, still get a sum")
@@ -168,7 +169,7 @@ def train():
 
     dataset_path = args.dataset_path + args.dataset + '.pkl'
     if args.with_cuda:
-        os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+        os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
     if os.path.exists(dataset_path):
         with open(dataset_path, 'rb') as f:

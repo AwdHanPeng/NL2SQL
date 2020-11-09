@@ -1,0 +1,10 @@
+*.pyc
+/.idea
+/.vscode
+*.pkl
+/runs
+.xml
+*.xml
+.json
+/__pycache__
+/bert

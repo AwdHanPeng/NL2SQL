@@ -58,11 +58,9 @@ class Trainer:
         print('=====================Module in Optimizer==============')
         for name, param in zip(self.params_name, self.params):
             print('Module {}: {}*1e3'.format(name, sum([p.nelement() for p in param]) // 1e3))
-        print('=====================Module in Bert==============')
-        for name, param in zip(self.params_bert_name, self.params_bert):
-            print('Module {}: {}*1e3'.format(name, sum([p.nelement() for p in param]) // 1e3))
         print("Total Parameters: {}*1e6".format(sum([p.nelement() for p in self.params]) // 1e6))
-        print("Total Bert Parameters: {}*1e6".format(sum([p.nelement() for p in self.params_bert]) // 1e6))
+        if args.use_bert:
+            print("Total Bert Parameters: {}*1e6".format(sum([p.nelement() for p in self.params_bert]) // 1e6))
         self.shuffle = args.shuffle
         self.grad_clip = args.grad_clip
         self.session_loop = args.session_loop
