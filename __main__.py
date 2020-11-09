@@ -92,7 +92,7 @@ def train():
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate of adam")
     parser.add_argument("--use_bert", type=bool, default=True, help="use bert or not")
     parser.add_argument("--lr_bert", type=float, default=1e-5, help="learning rate of adam for bert")
-    parser.add_argument("--fix_bert", type=bool, default=False, help="fix bert param of fine-tune")
+    parser.add_argument("--fix_bert", type=bool, default=True, help="fix bert param of fine-tune")
     parser.add_argument("--warmup_steps", type=int, default=2000, help="warmup_steps == 4000/20")
     parser.add_argument("--adam_weight_decay", type=float, default=0.01, help="weight_decay of adam")
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="adam first beta value")
