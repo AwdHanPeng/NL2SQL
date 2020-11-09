@@ -2,10 +2,11 @@ import argparse
 
 from torch.utils.data import DataLoader
 from dataset import ATIS_DataSetLoad as DataSetLoad
-from model import Model
+from model import Model1
 from trainer import Trainer
 import os
 import pickle
+import torch
 
 
 class DataSetConfig(object):
@@ -48,48 +49,6 @@ class DataSetConfig(object):
         self.use_max_length = True
 
 
-class DefaultConfig(object):
-    seed = 3435
-    num_epochs = 100
-    use_gpu = True  # user GPU or not
-    gpu_id = 0
-    use_max_length = True
-    use_keywords = True
-    keywords_ori = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
-                    'distinct', 'and', 'limit value', 'limit', 'desc', '>', 'avg', 'having', 'max', 'in', '<',
-                    'sum', 'intersect', 'not', 'min', 'except', 'or', 'asc', 'like', '!=', 'union', 'between', '-',
-                    '+', '/']
-    keywords = ['=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by', 'order by',
-                'distinct', 'and', 'limit value', 'limit', 'descend', '>', 'average', 'have', 'max', 'in', '<',
-                'sum', 'intersect', 'not', 'min', 'except', 'or', 'ascend', 'like', '! =', 'union', 'between', '-',
-                '+', '/']
-    max_length = {
-        'sql': 65,
-        'utter': 30,
-        'db': 300,
-        'turn': 6,
-        'table': 26,
-        'keyword': 75,
-        'de_sql': 65,
-        'de_utter': 30
-    }
-    root = "F:/NL2SQL"
-    output_root = root + "dataset/data_output/"
-    raw_train_filename = root + "dataset/sparc_data_removefrom/train.pkl"
-    raw_validation_filename = root + "dataset/sparc_data_removefrom/dev.pkl"
-    database_schema_filename = root + "dataset/sparc_data_removefrom/tables.json"
-    # embedding_filename ="/home/lily/rz268/dialog2sql/word_emb/glove.840B.300d.txt"
-    input_vocabulary_filename = 'input_vocabulary.pkl'
-    output_vocabulary_filename = 'output_vocabulary.pkl'
-    data_directory = "processed_data_sparc_removefrom"
-    input_key = "utterance"
-    processed_train_filename = 'train.pkl'
-    processed_validation_filename = 'validation.pkl'
-    anonymize = False
-    anonymization_scoring = False
-    use_snippets = False
-
-
 def train():
     parser = argparse.ArgumentParser()
 
@@ -100,9 +59,9 @@ def train():
     parser.add_argument("--save_bert_vocab", type=bool, default=True, help="Save bert vocab or not")
 
     # dataset opts
-    parser.add_argument("--utter_len", type=int, default=40, help="maximum sequence length of utterance")
-    parser.add_argument("--sql_len", type=int, default=50, help="maximum sequence length of sql")
-    parser.add_argument("--db_len", type=int, default=422,
+    parser.add_argument("--utter_len", type=int, default=256, help="maximum sequence length of utterance")
+    parser.add_argument("--sql_len", type=int, default=256, help="maximum sequence length of sql")
+    parser.add_argument("--db_len", type=int, default=512,
                         help="maximum sequence length of db (column and table)")
     parser.add_argument("--turn_num", type=int, default=6, help="maximum turn number of dialogue")
     parser.add_argument("--max_table", type=int, default=26, help="maximum table number of dialogue")
@@ -129,7 +88,6 @@ def train():
     parser.add_argument("--with_cuda", type=bool, default=True, help="training with CUDA: true, or false")
     parser.add_argument("--gpu_id", type=bool, default='3', help="training gpu id")
     parser.add_argument("--log_freq", type=int, default=20, help="printing loss every n iter: setting n")
-    parser.add_argument("--cuda_devices", type=int, nargs='+', default=None, help="CUDA device ids")
     parser.add_argument("--load_epoch", type=int, default=-1, help="load epoch x's model param")
     parser.add_argument("--lr", type=float, default=1e-4, help="learning rate of adam")
     parser.add_argument("--use_bert", type=bool, default=True, help="use bert or not")
@@ -150,19 +108,12 @@ def train():
     # model debug
     parser.add_argument("--tiny_dataset", type=bool, default=True, help="use 200 sample to debug")
     parser.add_argument("--warmup", type=bool, default=False, help="warmup or not")
-    parser.add_argument("--grad_clip", type=bool, default=False, help="grad clip or not")
+    parser.add_argument("--grad_clip", type=bool, default=True, help="grad clip or not")
     parser.add_argument("--hard_atten", type=bool, default=True, help="Avoid [0]*N mask, still get a sum")
-    parser.add_argument("--pre_trans", type=bool, default=True,
-                        help="True: pre convert bert/glove embedding into dim and then add signal; False: add signal and then convert dim")
     parser.add_argument("--key_feature_init", type=bool, default=False, help="init key embedding use content feature")
     parser.add_argument("--key_file_init", type=bool, default=False, help="read embedding file to init key embedding")
-    parser.add_argument("--utter_fuse", type=bool, default=True, help="fuse utter during decode step")
-    parser.add_argument("--three_fuse", type=bool, default=True, help="fuse utter and sql, except db in decode step")
-    parser.add_argument("--base_model", type=bool, default=False, help="base model")
-    parser.add_argument("--use_signal", type=bool, default=True, help="use siganl or not")
-    parser.add_argument("--embedding_matrix_random", type=bool, default=False, help="embedding_matrix_random")
-    parser.add_argument("--last_db_feature", type=bool, default=False, help="just use one turn's db feature")
-    parser.add_argument("--session_loop", type=bool, default=False, help="session loop for debug")
+    parser.add_argument("--model_name", type=str, default='model1', help="base model")
+    parser.add_argument("--use_signal", type=bool, default=False, help="use signal or not")
     args = parser.parse_args()
 
     print("Loading {} Dataset".format(args.dataset))
@@ -189,12 +140,13 @@ def train():
 
     if args.tiny_dataset:
         print('Use Tiny Dateset')
-        train_data_loader = train_data_loader[:1000]
+        train_data_loader = train_data_loader[:5]
         test_data_loader = None
         # test_data_loader = test_data_loader[:5]
 
     print("Building NL2SQL model")
-    model = Model(args)
+    if args.model_name == 'model1':
+        model = Model1(args)
 
     # download bert
     print("Creating BERT Trainer")
@@ -208,7 +160,8 @@ def train():
     for epoch in range(args.epochs):
         trainer.train(epoch)
         if test_data_loader is not None:
-            valid_step_acc, valid_string_acc = trainer.test(epoch)
+            with torch.no_grad():
+                valid_step_acc, valid_string_acc = trainer.test(epoch)
             trainer.save(epoch, valid_step_acc, valid_string_acc, args.output_path)
 
 

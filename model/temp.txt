@@ -29,3 +29,10 @@ mulit head atten
 *6
 
 decoder embedding dim 512*len(dict)
+
+
+
+'=', 'select', 'value', ')', '(', 'where', ',', 'count', 'group by',
+'order by', 'distinct', 'and', 'limit value', 'limit', 'descent', '>',
+'average', 'having','max', 'in', '<', 'sum', 'intersect', 'not',
+'min', 'except', 'or', 'ascent', 'like', '!=','union', 'between', '-', '+', '/'

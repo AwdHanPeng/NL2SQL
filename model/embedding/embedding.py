@@ -43,11 +43,13 @@ class InputEmbedding(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.input_size = args.input_size
-        self.embedding_size = args.hidden if args.pre_trans else args.input_size
+        self.embedding_size = args.hidden
         self.total_len = args.utter_len + args.sql_len + args.db_len
         self.utter_len = args.utter_len
+        self.input_size = args.input_size
         self.turn_num = args.turn_num
         self.max_table = args.max_table
+
         self.cuda_condition = torch.cuda.is_available() and args.with_cuda
         self.device = torch.device("cuda" if self.cuda_condition else "cpu")
         self.position_embedding = PositionalEmbedding(d_model=self.embedding_size, total_len=self.total_len)
@@ -59,34 +61,26 @@ class InputEmbedding(nn.Module):
         self.db_embedding = DBEmbedding(max_table=self.max_table, embed_size=self.embedding_size)
         if args.use_bert:
             self.pre_train_embedding = PreTrainBert(args)
+        self.tranform_layer = nn.Linear(self.input_size,
+                                        self.embedding_size)  # this module convert bert dim to out model dim
 
-    def parse_batch_content(self, batch_content, type):
+    def parse_batch_content(self, batch_content):
         '''
         :param batch_content: [[,,,]],[,,,]]]
         :return: bs,total,hidden
         '''
-        batch_size = len(batch_content)
         batch_content_embedding = self.pre_train_embedding(batch_content)
-        # if type == 'content':
-        #     assert batch_content_embedding.shape == (batch_size, self.total_len, self.input_size)
-        # elif type == 'utterance':
-        #     assert batch_content_embedding.shape == (batch_size, self.utter_len, self.input_size)
-        # else:
-        #     raise Exception('InValid Type !')
-        return batch_content_embedding
 
-    def parse_content(self, content, type):
+        return self.tranform_layer(batch_content_embedding)
+
+    def parse_content(self, content):
         '''
         :param content: [str1]
         :return: total_len,hidden
         '''
-        assert len(content) == 1
+
         content_embedding = self.pre_train_embedding([content])[0, :, :]
-        if type == 'content':
-            assert content_embedding.shape == (self.total_len, self.input_size)
-        if type == 'utterance':
-            assert content_embedding.shape == (self.utter_len, self.input_size)
-        return content_embedding
+        return self.tranform_layer(content_embedding)
 
     def parse_signal(self, signal, type):
         signal = signal.to(self.device)
